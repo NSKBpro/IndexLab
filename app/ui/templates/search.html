@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 class="text-2xl font-semibold mb-6">Search, Compare & Evaluate</h1>
+
+<div class="grid lg:grid-cols-2 gap-6">
+  <!-- Single Search -->
+  <section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold mb-4">Single Search</h2>
+    <form id="search-form" class="grid sm:grid-cols-2 gap-4 items-end">
+      <div>
+        <label class="text-sm font-medium">Index</label>
+        <input id="search-index" name="index_name" placeholder="index name" required class="mt-1 w-full rounded-md border px-3 py-2"/>
+      </div>
+      <div class="sm:col-span-2">
+        <label class="text-sm font-medium">Query</label>
+        <input id="search-query" name="query" placeholder="e.g., factory reset steps" required class="mt-1 w-full rounded-md border px-3 py-2"/>
+      </div>
+      <div class="flex items-center gap-4">
+        <label class="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" name="hybrid" class="rounded border" />
+          Hybrid (BM25 + Vector)
+        </label>
+        <div>
+          <label class="text-sm">k</label>
+          <input type="number" name="k" value="5" min="1" class="ml-2 w-20 rounded-md border px-3 py-2"/>
+        </div>
+      </div>
+      <button type="submit" class="sm:col-span-2 rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Search</button>
+    </form>
+    <div id="search-status" class="text-sm text-slate-500 mt-3"></div>
+    <ol id="search-results" class="mt-3 space-y-2"></ol>
+  </section>
+
+  <!-- Compare Two Indexes -->
+  <section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold mb-4">Compare Two Indexes</h2>
+    <form id="cmp-form" class="grid sm:grid-cols-2 gap-4 items-end">
+      <div>
+        <label class="text-sm font-medium">Left index</label>
+        <input name="left_index" placeholder="left index" required class="mt-1 w-full rounded-md border px-3 py-2"/>
+      </div>
+      <div>
+        <label class="text-sm font-medium">Right index</label>
+        <input name="right_index" placeholder="right index" required class="mt-1 w-full rounded-md border px-3 py-2"/>
+      </div>
+      <div class="sm:col-span-2">
+        <label class="text-sm font-medium">Query</label>
+        <input name="query" placeholder="e.g., verify bgp session" required class="mt-1 w-full rounded-md border px-3 py-2"/>
+      </div>
+      <div>
+        <label class="text-sm">k</label>
+        <input type="number" name="k" value="5" min="1" class="mt-1 w-20 rounded-md border px-3 py-2"/>
+      </div>
+      <button type="submit" class="sm:col-span-2 rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Compare</button>
+    </form>
+
+    <div id="cmp-status" class="text-sm text-slate-500 mt-3"></div>
+    <div class="grid sm:grid-cols-2 gap-4 mt-3">
+      <div>
+        <h3 class="text-sm font-semibold">Left</h3>
+        <ol id="cmp-left" class="mt-2 space-y-2"></ol>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold">Right</h3>
+        <ol id="cmp-right" class="mt-2 space-y-2"></ol>
+      </div>
+    </div>
+    <div id="cmp-overlap" class="text-xs text-slate-500 mt-2"></div>
+  </section>
+
+  <!-- Detailed Eval (single index) -->
+  <section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm lg:col-span-2">
+    <h2 class="text-lg font-semibold mb-4">Evaluate — Per-question details</h2>
+    <form id="eval-form" enctype="multipart/form-data" class="grid sm:grid-cols-4 gap-4 items-end">
+      <div>
+        <label class="text-sm font-medium">Index</label>
+        <input name="index_name" placeholder="index name" required class="mt-1 w-full rounded-md border px-3 py-2"/>
+      </div>
+      <div>
+        <label class="text-sm">k</label>
+        <input type="number" name="k" value="5" min="1" class="mt-1 w-full rounded-md border px-3 py-2"/>
+      </div>
+      <div>
+        <label class="text-sm font-medium">Gold file</label>
+        <input type="file" name="file" accept=".csv,.xlsx,.xls,.json" required
+               class="mt-1 block w-full text-sm file:mr-2 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-brand-600 file:text-white hover:file:bg-brand-700"/>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="inline-flex items-center gap-2 text-sm mt-6">
+          <input type="checkbox" name="return_details" checked class="rounded border" />
+          Return details
+        </label>
+        <label class="inline-flex items-center gap-1 text-sm mt-6">
+          hits:
+          <input type="number" name="include_hits" value="3" min="0" class="w-16 rounded-md border px-2 py-1"/>
+        </label>
+      </div>
+      <button type="submit" class="sm:col-span-4 rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Run Eval</button>
+    </form>
+
+    <div id="eval-summary" class="text-sm mt-4"></div>
+    <div class="overflow-auto mt-3">
+      <table id="eval-table" class="min-w-full text-sm border-separate border-spacing-y-1"></table>
+    </div>
+  </section>
+</div>
+
+<!-- Modal for full chunk -->
+<div id="chunk-modal" class="fixed inset-0 hidden items-center justify-center bg-black/50 z-50">
+  <div class="max-w-4xl w-[90%] bg-white dark:bg-slate-900 rounded-lg shadow-lg overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b dark:border-slate-700">
+      <h3 id="chunk-title" class="text-sm font-semibold">Chunk</h3>
+      <button id="chunk-close" class="text-slate-500 hover:text-slate-700">✕</button>
+    </div>
+    <pre id="chunk-body" class="p-4 text-xs whitespace-pre-wrap overflow-auto max-h-[70vh]"></pre>
+  </div>
+</div>
+
+<script>
+function esc(s){ return (s??'').toString().replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+
+// Apply highlight spans -> HTML with <mark>
+function applySpansToText(text, spansDict){
+  if(!spansDict || !text) return esc(text||'');
+  const spans = [];
+  for (const term in spansDict) {
+    for (const pair of spansDict[term]) {
+      const s = Array.isArray(pair) ? pair[0] : pair.start;
+      const e = Array.isArray(pair) ? pair[1] : pair.end;
+      if (typeof s === 'number' && typeof e === 'number' && e > s) spans.push([s,e]);
+    }
+  }
+  spans.sort((a,b)=> a[0]-b[0]);
+  let out = '', last = 0;
+  for (const [s,e] of spans) {
+    if (s < last) continue; // skip overlap
+    out += esc((text||'').slice(last, s));
+    out += '<mark>' + esc((text||'').slice(s, e)) + '</mark>';
+    last = e;
+  }
+  out += esc((text||'').slice(last));
+  return out;
+}
+
+// Source/provenance line (no duplicate ID)
+function formatSource(hit){
+  const src = hit.source || {};
+  const bits = [];
+  if (src.parsed && src.parsed.doc !== undefined && src.parsed.chunk !== undefined) {
+    bits.push(`doc ${src.parsed.doc} · chunk ${src.parsed.chunk}`);
+  }
+  if (src.collection) bits.push(`collection: ${src.collection}`);
+  if (src.page !== undefined && src.page !== null) bits.push(`p.${src.page}`);
+  if (src.section) bits.push(src.section);
+  if (src.index) bits.push(`index: ${src.index}`);
+  if (src.origin_type) bits.push(`origin: ${src.origin_type}`);
+  const meta = bits.length ? ` — ${esc(bits.join(' • '))}` : '';
+
+  // Prefer URL (url/origin_url), else path (path/origin_path), else title, else id
+  let titleHtml = '';
+  if (src.url || src.origin_url) {
+    const u = src.url || src.origin_url;
+    const label = src.title || u;
+    titleHtml = `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" class="font-medium underline">${esc(label)}</a>`;
+  } else if (src.path || src.origin_path) {
+    const p = src.path || src.origin_path;
+    titleHtml = `<span class="font-medium">${esc(src.title || p)}</span>`;
+  } else if (src.title) {
+    titleHtml = `<span class="font-medium">${esc(src.title)}</span>`;
+  } else {
+    titleHtml = `<span class="font-medium">${esc(hit.id)}</span>`;
+  }
+
+  const mini = (src.bytes || src.sha256)
+    ? `<div class="text-[10px] text-slate-400 mt-0.5">${src.bytes ? (src.bytes+' bytes') : ''}${src.bytes && src.sha256 ? ' • ' : ''}${src.sha256 ? ('sha256:'+esc(src.sha256).slice(0,12)+'…') : ''}</div>`
+    : '';
+
+  return `<div class="mt-1 text-[11px] text-slate-500">${titleHtml}${meta}${mini}</div>`;
+}
+
+// Open modal with full chunk (+ highlights)
+async function openChunk(indexName, docId){
+  const modal = document.getElementById('chunk-modal');
+  const title = document.getElementById('chunk-title');
+  const body = document.getElementById('chunk-body');
+  title.textContent = `index: ${indexName} • id: ${docId}`;
+  body.innerHTML = 'Loading…';
+  modal.classList.remove('hidden'); modal.classList.add('flex');
+  try {
+    const q = document.getElementById('search-query')?.value || '';
+    const url = `/api/chunk?index_name=${encodeURIComponent(indexName)}&doc_id=${encodeURIComponent(docId)}&q=${encodeURIComponent(q)}`;
+    const res = await fetch(url);
+    const txt = await res.text();
+    if (!res.ok) { body.textContent = `Error ${res.status}: ${txt}`; return; }
+    const data = JSON.parse(txt);
+    body.innerHTML = applySpansToText(data.text || '', data.highlights || {});
+    const s = data.source || {};
+    const head = [];
+    if (s.title) head.push(s.title);
+    if (s.path) head.push(s.path);
+    if (s.url) head.push(s.url);
+    if (s.origin_url && !s.url) head.push(s.origin_url);
+    if (head.length) title.textContent = head.join(' — ');
+  } catch (e) {
+    body.textContent = 'JS error: ' + e;
+  }
+}
+
+(function(){
+  const closeBtn = document.getElementById('chunk-close');
+  const modal = document.getElementById('chunk-modal');
+  closeBtn.addEventListener('click', ()=>{ modal.classList.add('hidden'); modal.classList.remove('flex'); });
+  modal.addEventListener('click', (e)=>{ if(e.target === modal){ modal.classList.add('hidden'); modal.classList.remove('flex'); }});
+})();
+
+// ---------- Single Search ----------
+(function(){
+  const statusEl = document.getElementById('search-status');
+  const listEl = document.getElementById('search-results');
+
+  function renderHit(hit){
+    const score = (hit.score !== undefined && hit.score !== null) ? Number(hit.score).toFixed(3) : null;
+    const top = score ? `${esc(hit.id)} <span class="ml-2 text-xs text-slate-500">score: ${score}</span>` : esc(hit.id);
+
+    const src = formatSource(hit);
+    const indexName = hit.source?.index || document.getElementById('search-index')?.value || '';
+    const openBtn = `<button class="mt-2 text-xs text-brand-700 hover:underline" onclick="openChunk('${esc(indexName)}','${esc(hit.id)}')">Open chunk</button>`;
+
+    const previewId = `pv-${Math.random().toString(36).slice(2)}`;
+    const previewHTML = applySpansToText(hit.preview || '', hit.highlights_preview || {});
+    const toggleBtn = `<button class="ml-3 text-[11px] text-slate-600 hover:underline" onclick="const el=document.getElementById('${previewId}'); el.classList.toggle('hidden');">Show preview</button>`;
+
+    return `
+      <li class="border rounded-md p-3 bg-white dark:bg-slate-900">
+        <div class="text-sm font-medium flex items-center">${top} ${toggleBtn}</div>
+        ${src}
+        <div id="${previewId}" class="mt-1 text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap hidden">${previewHTML}</div>
+        ${openBtn}
+      </li>
+    `;
+  }
+
+  document.getElementById('search-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    statusEl.textContent = 'Searching…';
+    listEl.innerHTML = '';
+    try {
+      const fd = new FormData(e.target);
+      const indexName = fd.get('index_name');
+      const body = JSON.stringify({
+        index_name: indexName,
+        query: fd.get('query'),
+        k: Number(fd.get('k')||5),
+        hybrid: !!fd.get('hybrid')
+      });
+      const res = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body });
+      const txt = await res.text();
+      if (!res.ok) { statusEl.textContent = `Error ${res.status}: ${txt}`; return; }
+      const data = JSON.parse(txt);
+      const hits = data.hits || [];
+      for (const h of hits) { if (!h.source) h.source = {}; if (!h.source.index) h.source.index = indexName; }
+      listEl.innerHTML = hits.length ? hits.map(renderHit).join('') : '<li class="text-sm text-slate-500">No results</li>';
+      statusEl.textContent = `Results: ${hits.length}`;
+    } catch (err) {
+      statusEl.textContent = 'JS error: ' + err;
+    }
+  });
+})();
+
+// ---------- Compare Two Indexes ----------
+(function(){
+  const statusEl = document.getElementById('cmp-status');
+  const leftEl = document.getElementById('cmp-left');
+  const rightEl = document.getElementById('cmp-right');
+  const overlapEl = document.getElementById('cmp-overlap');
+
+  function renderCompareHit(hit, indexName){
+    const score = (hit.score !== undefined && hit.score !== null) ? Number(hit.score).toFixed(3) : null;
+    const top = score ? `${esc(hit.id)} <span class="ml-2 text-xs text-slate-500">score: ${score}</span>` : esc(hit.id);
+    const src = formatSource(hit);
+    const previewId = `pv-${Math.random().toString(36).slice(2)}`;
+    const previewHTML = applySpansToText(hit.preview || '', hit.highlights_preview || {});
+    const toggleBtn = `<button class="ml-3 text-[11px] text-slate-600 hover:underline" onclick="const el=document.getElementById('${previewId}'); el.classList.toggle('hidden');">Show preview</button>`;
+    const openBtn = `<button class="mt-2 text-xs text-brand-700 hover:underline" onclick="openChunk('${esc(indexName)}','${esc(hit.id)}')">Open chunk</button>`;
+
+    return `
+      <li class="border rounded-md p-3 bg-white dark:bg-slate-900">
+        <div class="text-sm font-medium flex items-center">${top} ${toggleBtn}</div>
+        ${src}
+        <div id="${previewId}" class="mt-1 text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap hidden">${previewHTML}</div>
+        ${openBtn}
+      </li>
+    `;
+  }
+
+  document.getElementById('cmp-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    statusEl.textContent = 'Comparing…';
+    leftEl.innerHTML = ''; rightEl.innerHTML = ''; overlapEl.textContent = '';
+    try {
+      const fd = new FormData(e.target);
+      const left_index = fd.get('left_index');
+      const right_index = fd.get('right_index');
+      const body = JSON.stringify({
+        left_index,
+        right_index,
+        query: fd.get('query'),
+        k: Number(fd.get('k')||5)
+      });
+      const res = await fetch('/api/compare', { method:'POST', headers:{'Content-Type':'application/json'}, body });
+      const txt = await res.text();
+      if (!res.ok) { statusEl.textContent = `Error ${res.status}: ${txt}`; return; }
+      const data = JSON.parse(txt);
+
+      const leftHits = data.left?.hits || [];
+      const rightHits = data.right?.hits || [];
+      for (const h of leftHits)  { if (!h.source) h.source = {}; if (!h.source.index) h.source.index = left_index; }
+      for (const h of rightHits) { if (!h.source) h.source = {}; if (!h.source.index) h.source.index = right_index; }
+
+      leftEl.innerHTML  = leftHits.length  ? leftHits.map(h => renderCompareHit(h, left_index)).join('')  : '<li class="text-sm text-slate-500">No results</li>';
+      rightEl.innerHTML = rightHits.length ? rightHits.map(h => renderCompareHit(h, right_index)).join('') : '<li class="text-sm text-slate-500">No results</li>';
+
+      const overlap = data.overlap || [];
+      overlapEl.textContent = overlap.length ? `Overlap: ${overlap.join(', ')}` : 'Overlap: none';
+      statusEl.textContent = `Left: ${leftHits.length} • Right: ${rightHits.length}`;
+    } catch (err) {
+      statusEl.textContent = 'JS error: ' + err;
+    }
+  });
+})();
+</script>
+{% endblock %}

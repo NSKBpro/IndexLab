@@ -1,0 +1,21 @@
+question,expected_id
+what is nimbus one,1#0 
+difference between standard and pro,1#0
+power requirements,4#0
+operating temperature,5#0
+how to update firmware via cli,7#0
+factory reset steps,8#0
+default management ip,9#0
+does it support bgp,11#0
+max firewall rules,12#0
+configure dnat https,13#0
+wireguard tunnels maximum,14#0
+tls inspection details,15#0
+rate limit for api,19#0
+create support bundle,22#0
+error code e201,23#0
+max concurrent sessions,24#0
+is it fips certified,25#0
+part number for pro,26#0
+how to backup to usb,20#0
+how to verify bgp session,11#0

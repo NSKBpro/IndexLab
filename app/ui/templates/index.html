@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 class="text-2xl font-semibold mb-6">Upload & Build Index</h1>
+
+<div class="grid md:grid-cols-2 gap-6">
+  <!-- Left: form -->
+  <form id="upload-form" hx-post="/api/upload" hx-encoding="multipart/form-data" hx-trigger="submit" hx-swap="none"
+        class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+    <div class="space-y-5">
+      <div>
+        <label class="text-sm font-medium">Index name</label>
+        <input name="index_name" required
+               class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring" />
+      </div>
+
+      <div>
+        <label class="text-sm font-medium">Text column (optional)</label>
+        <input name="text_column" placeholder="e.g., text"
+               class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring" />
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="text-sm font-medium">Embedding model</label>
+          <select name="embedding_model" id="model-select"
+                  class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"></select>
+        </div>
+        <div class="flex items-end">
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" name="normalize_embeddings" id="norm" class="rounded border-slate-300 dark:border-slate-700" checked />
+            Normalize embeddings
+          </label>
+        </div>
+      </div>
+
+      <fieldset class="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+        <legend class="text-sm font-semibold px-2">Chunking</legend>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="text-sm">Mode</label>
+            <select name="chunk_mode" id="chunk-mode"
+                    class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring">
+              <option value="fixed_chars">fixed_chars</option>
+              <option value="sentences">sentences</option>
+              <option value="headings">headings</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-sm">Size</label>
+            <input type="number" name="chunk_size" id="chunk-size" value="1000" min="200" step="50"
+                   class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+          </div>
+          <div>
+            <label class="text-sm">Overlap</label>
+            <input type="number" name="chunk_overlap" id="chunk-overlap" value="150" min="0" step="25"
+                   class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+        <legend class="text-sm font-semibold px-2">Vector backend</legend>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="text-sm">Type</label>
+            <select name="backend" id="backend"
+                    class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring">
+              <option value="faiss_flat">faiss_flat</option>
+              <option value="faiss_ivf">faiss_ivf</option>
+              <option value="hnswlib">hnswlib</option>
+            </select>
+          </div>
+          <div id="ivf-params" class="hidden">
+            <label class="text-sm">nlist / nprobe</label>
+            <div class="mt-1 grid grid-cols-2 gap-3">
+              <input type="number" name="nlist" value="1024"
+                     class="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+              <input type="number" name="nprobe" value="10"
+                     class="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+            </div>
+          </div>
+          <div id="hnsw-params" class="hidden">
+            <label class="text-sm">HNSW params</label>
+            <div class="mt-1 grid grid-cols-3 gap-3">
+              <input type="number" name="M" value="16"
+                     class="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+              <input type="number" name="ef_construction" value="200"
+                     class="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+              <input type="number" name="ef_search" value="64"
+                     class="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <div>
+        <label class="text-sm font-medium">File (CSV/XLSX/JSON)</label>
+        <input type="file" name="file" required
+               class="mt-1 block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md
+                      file:border-0 file:text-sm file:font-medium
+                      file:bg-brand-600 file:text-white hover:file:bg-brand-700" />
+      </div>
+
+      <button type="submit"
+              class="w-full inline-flex items-center justify-center gap-2 rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">
+        Upload & Build
+      </button>
+    </div>
+  </form>
+
+  <!-- Right: log -->
+  <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="text-lg font-semibold">Build Log</h2>
+      <span class="text-xs text-slate-500">live via SSE</span>
+    </div>
+    <pre id="log" class="scroll-slim bg-slate-900 text-green-200 rounded-lg p-4 h-[420px] overflow-auto text-sm"></pre>
+  </div>
+</div>
+
+<script>
+(async function init(){
+  const cfg = await (await fetch('/api/config')).json();
+  const sel = document.getElementById('model-select');
+  sel.innerHTML = cfg.allowed_models.map(m => `<option value="${m}">${m}</option>`).join('');
+  sel.value = cfg.defaults.embedding_model;
+  document.getElementById('norm').checked = !!cfg.defaults.normalize_embeddings;
+  document.getElementById('chunk-mode').value = cfg.defaults.chunk_mode;
+  document.getElementById('chunk-size').value = cfg.defaults.chunk_size;
+  document.getElementById('chunk-overlap').value = cfg.defaults.chunk_overlap;
+
+  const be = document.getElementById('backend');
+  be.value = cfg.defaults.backend;
+  const toggle = () => {
+    document.getElementById('ivf-params').classList.toggle('hidden', be.value !== 'faiss_ivf');
+    document.getElementById('hnsw-params').classList.toggle('hidden', be.value !== 'hnswlib');
+  };
+  be.addEventListener('change', toggle); toggle();
+})();
+document.getElementById('upload-form').addEventListener('htmx:afterRequest', (e) => {
+  const job = JSON.parse(e.detail.xhr.responseText);
+  const evt = new EventSource(`/api/events/${job.job_id}`);
+  const logEl = document.getElementById('log');
+  evt.onmessage = (m) => {
+    logEl.textContent += m.data + "\n";
+    logEl.scrollTop = logEl.scrollHeight;
+    if (m.data === "DONE" || m.data.startsWith("ERROR")) evt.close();
+  };
+});
+</script>
+{% endblock %}

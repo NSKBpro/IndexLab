@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 class="text-2xl font-semibold mb-6">Sources</h1>
+
+<section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+  <div class="grid sm:grid-cols-3 gap-4 items-end">
+    <div>
+      <label class="text-sm font-medium">Index</label>
+      <select id="index-select" class="mt-1 w-full rounded-md border px-3 py-2"></select>
+    </div>
+    <div>
+      <label class="text-sm font-medium opacity-0">.</label>
+      <button id="load-btn" class="w-full rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Load Sources</button>
+    </div>
+  </div>
+
+  <div id="summary" class="text-sm mt-4"></div>
+  <div class="overflow-auto mt-3">
+    <table id="src-table" class="min-w-full text-sm border-separate border-spacing-y-1"></table>
+  </div>
+</section>
+
+<script>
+async function fetchIndexes(){
+  const res = await fetch('/api/indexes');
+  const data = await res.json();
+  const sel = document.getElementById('index-select');
+  sel.innerHTML = (data.indexes||[]).map(x => `<option value="${x.index_name}">${x.index_name}</option>`).join('');
+}
+async function loadSources(){
+  const name = document.getElementById('index-select').value;
+  if(!name) return;
+  const res = await fetch(`/api/sources/${name}`);
+  const data = await res.json();
+  const summary = document.getElementById('summary');
+  summary.textContent = `index=${data.index_name} • chunks=${data.count} • model=${data.model} • backend=${data.backend} • created_at=${data.created_at}`;
+  const tbl = document.getElementById('src-table');
+  const rows = data.sources ? Object.entries(data.sources) : [];
+  if(!rows.length){
+    tbl.innerHTML = '<tbody><tr><td class="px-2 py-1 text-slate-500">No source metadata recorded.</td></tr></tbody>';
+    return;
+  }
+  tbl.innerHTML = `
+    <thead><tr>
+      <th class="text-left px-2 py-1">File</th>
+      <th class="text-left px-2 py-1">Rows</th>
+      <th class="text-left px-2 py-1">SHA-256</th>
+      <th class="text-left px-2 py-1">Added at (UTC)</th>
+    </tr></thead>
+    <tbody>
+      ${rows.map(([fname,meta]) => `
+        <tr class="bg-slate-50 dark:bg-slate-800/40">
+          <td class="px-2 py-1">${fname}</td>
+          <td class="px-2 py-1">${meta.rows ?? ''}</td>
+          <td class="px-2 py-1 font-mono text-xs">${meta.sha256 ?? ''}</td>
+          <td class="px-2 py-1">${meta.added_at ?? ''}</td>
+        </tr>`).join('')}
+    </tbody>`;
+}
+
+document.getElementById('load-btn').addEventListener('click', loadSources);
+fetchIndexes().then(loadSources);
+</script>
+{% endblock %}

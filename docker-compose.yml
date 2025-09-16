@@ -1,0 +1,21 @@
+version: "3.9"
+services:
+  vectordash:
+    build: .
+    image: vectordash:local
+    container_name: vectordash
+    restart: unless-stopped
+    ports: ["8000:8000"]
+    environment:
+      DATA_DIR: /data
+      UPLOADS_DIR: /data/uploads
+      INDEXES_DIR: /data/indexes
+      DB_PATH: /data/app.sqlite
+      CHARTS_DIR: /data/charts
+      ALLOWED_MODELS: "sentence-transformers/all-MiniLM-L6-v2, BAAI/bge-m3, intfloat/e5-base-v2"
+      DEFAULT_BACKEND: "faiss_flat"
+      TOP_K: "5"
+    volumes:
+      - vectordash_data:/data
+volumes:
+  vectordash_data:

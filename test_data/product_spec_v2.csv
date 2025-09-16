@@ -1,0 +1,28 @@
+section,text
+Overview,"Nimbus One is a 1U rack-mounted network security appliance providing L3/L7 traffic inspection, policy routing, firewall, and VPN termination for up to 10,000 clients."
+Editions,"Nimbus One ships in Standard and Pro editions. Pro adds redundant power supplies (dual PSU), 40GbE uplinks, and hardware TLS acceleration."
+Hardware,"Appliance dimensions 1U, depth 430mm. Dual Intel Xeon Silver, 64GB RAM (up to 256GB), 2x 1TB NVMe (RAID1 optional), hot-swap fans."
+Interfaces,"Front: 2x USB-A, LCD service panel. Rear: 8x 10GbE SFP+, 2x 1GbE RJ45, 1x management RJ45, serial console RJ45 (RJ45 console cable)."
+Power,"100–240V AC, 50/60Hz, 1.2A. Pro supports dual redundant PSUs with automatic failover (hot-swap)."
+Environment,Operating temp 10–35°C (50–95°F). Non-condensing humidity 10–85%. Acoustic noise <45dB at 1m.
+Licensing,"Base license includes routing, firewall, logging. Add-ons: Advanced Threat Protection (ATP), GeoIP filter, Global VPN."
+Firmware Updates,Firmware is delivered quarterly. Web UI: Maintenance → Updates → Check → Install. CLI: 'nimbus fw-update --check && nimbus fw-update --install'.
+Reset,Soft reset: hold Reset for 5s. Factory reset: hold Reset 15s until LCD flashes (pinhole). Clears configuration and admin password to defaults.
+Initial Setup,"Default management IP 192.168.1.10/24, username admin, password admin123. Change password at first login. Web UI: https://192.168.1.10."
+Networking Modes,"Supported: routed (default), transparent bridge, policy-based routing (PBR). Switching is not supported."
+Routing,"Static routes and BGPv4 supported. BGP requires Pro license. Max route table size 1,000,000 entries. Use 'show bgp summary' to verify sessions."
+Firewall,"Stateless ACLs and stateful inspection. Up to 2000 rules. Objects: networks, ports, users, tags. Example: allow TCP 443 outbound for group 'IT'."
+NAT,Source NAT (SNAT) and Destination NAT (DNAT). Port forwarding templates for HTTP/HTTPS/SSH. Example: DNAT 203.0.113.10:443 → 10.0.0.10:443.
+VPN,IPsec IKEv2 and WireGuard supported. Max tunnels: 200 (Standard) / 1000 (Pro). Example: 'nimbus vpn create --type wireguard'.
+TLS Inspection,Pro only. Decrypts outbound TLS using installed root CA. Bypass lists for domains/categories. Warning: Breaks some pinned apps.
+QoS,Priority queues and bandwidth caps per VLAN/user group. DSCP marking optional. Use 'show qos stats'.
+Logging,"Syslog over UDP/TCP, local ring buffer (2GB). SIEM export via JSON over HTTPS. Example endpoint: /api/v1/logs/export"
+CLI,SSH to the management IP. Run 'nimbus help'. Enter 'configure' for config mode. Commit using 'commit; save'. Example: 'set firewall rule 10 action allow'.
+API,REST API at https://<host>/api/v1. Auth via API keys in 'X-API-Key'. Rate limit 600 req/min. Example: GET /api/v1/system/health
+Backups,Download config from Maintenance → Backups. CLI: 'nimbus backup create --to usb'. Verify backup integrity with 'nimbus backup verify'.
+Restore,Restore via Maintenance → Backups → Restore. CLI: '--from usb' or '--from url'. Reboot required. Verify via 'show system restore-status'.
+Troubleshooting,Collect logs via Maintenance → Support Bundle. CLI: 'nimbus diag bundle --now'. Check hardware: 'show system sensors'.
+Error Codes,"E101 PSU failure (check power feed), E102 fan failure, E201 disk degraded (replace NVMe), E301 license expired, E401 BGP session down (verify neighbor)."
+Limits,"Max concurrent sessions 3,000,000; policies 10,000; VLANs 1024; QoS queues 256."
+Compliance,"FIPS 140-3 pending, CE, FCC Class A. Data-at-rest encryption AES-256-GCM."
+Part Numbers,"NIM-1U-STD, NIM-1U-PRO, NIM-PSU-AC, NIM-FAN-HOTSWAP, NIM-SFP-10G-SR."

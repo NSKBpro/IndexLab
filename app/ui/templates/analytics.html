@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 class="text-2xl font-semibold mb-6">Index Analytics</h1>
+
+<section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+  <div class="grid sm:grid-cols-4 gap-4 items-end">
+    <div class="sm:col-span-2">
+      <label class="text-sm font-medium">Index</label>
+      <select id="index-select" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+    </div>
+    <div>
+      <label class="text-sm font-medium opacity-0">.</label>
+      <button id="load-btn" class="w-full rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Load stats</button>
+    </div>
+    <div>
+      <label class="text-sm font-medium">Status</label>
+      <div id="status" class="mt-1 text-sm text-slate-500">—</div>
+    </div>
+  </div>
+
+  <div id="stats" class="grid sm:grid-cols-4 gap-4 mt-6"></div>
+</section>
+
+<script>
+// Small helper
+function esc(s){ return (s??'').toString().replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+
+async function fetchIndexes(){
+  const res = await fetch('/api/indexes');
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return (data.indexes || []).map(x => x.index_name);
+}
+
+async function fetchStats(indexName){
+  const res = await fetch(`/api/stats/${encodeURIComponent(indexName)}`);
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+
+function renderStatCard(label, value){
+  return `
+    <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-900">
+      <div class="text-xs text-slate-500">${esc(label)}</div>
+      <div class="text-xl font-semibold mt-1">${esc(value)}</div>
+    </div>`;
+}
+
+(async function init(){
+  const sel = document.getElementById('index-select');
+  const status = document.getElementById('status');
+  const stats = document.getElementById('stats');
+  const btn = document.getElementById('load-btn');
+
+  // populate selector
+  try {
+    const names = await fetchIndexes();
+    sel.innerHTML = names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') || '<option disabled>(no indexes)</option>';
+  } catch (e) {
+    status.textContent = 'Failed to load indexes: ' + e;
+  }
+
+  async function load(){
+    const ix = sel.value;
+    if (!ix){ status.textContent = 'No index selected'; return; }
+    status.textContent = 'Loading…';
+    stats.innerHTML = '';
+    try {
+      const s = await fetchStats(ix);
+      const man = s.manifest || {};
+      const cards = [
+        renderStatCard('Chunks', s.chunks ?? '—'),
+        renderStatCard('Avg length', s.len_avg?.toFixed ? s.len_avg.toFixed(1) : s.len_avg ?? '—'),
+        renderStatCard('P95 length', s.len_p95?.toFixed ? s.len_p95.toFixed(0) : s.len_p95 ?? '—'),
+        renderStatCard('Max length', s.len_max ?? '—'),
+      ];
+      const meta = `
+        <div class="sm:col-span-4 text-sm text-slate-500">
+          Model: <span class="font-medium">${esc(man.model ?? '—')}</span> •
+          Backend: <span class="font-medium">${esc(manifestOr(s, 'manifest.backend'))}</span> •
+          Created: <span class="font-medium">${esc(man.created_at ?? '—')}</span>
+        </div>`;
+      stats.innerHTML = cards.join('') + meta;
+      status.textContent = 'OK';
+    } catch (e) {
+      status.textContent = 'Error: ' + e;
+    }
+  }
+
+  function manifestOr(obj, path){
+    try { return path.split('.').reduce((a,k)=>a&&a[k], obj) ?? '—'; } catch { return '—'; }
+  }
+
+  btn.addEventListener('click', load);
+  // auto-load first
+  if (sel.value) load();
+})();
+</script>
+{% endblock %}

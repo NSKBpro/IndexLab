@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 class="text-2xl font-semibold mb-6">Evaluation — Comparison</h1>
+
+<section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+  <div class="grid lg:grid-cols-2 gap-6">
+    <div class="space-y-4">
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="text-sm font-medium">Index A (baseline)</label>
+          <select id="index-a" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+        </div>
+        <div>
+          <label class="text-sm font-medium">Hybrid A</label>
+          <select id="hybrid-a" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+            <option value="">Default</option>
+            <option value="true">On</option>
+            <option value="false">Off</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-sm font-medium">Index B (candidate)</label>
+          <select id="index-b" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+        </div>
+        <div>
+          <label class="text-sm font-medium">Hybrid B</label>
+          <select id="hybrid-b" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+            <option value="">Default</option>
+            <option value="true">On</option>
+            <option value="false">Off</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-3 gap-4 items-end">
+        <div>
+          <label class="text-sm font-medium">Top-K</label>
+          <input id="k" type="number" min="1" max="100" value="10" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+        </div>
+        <div>
+          <label class="text-sm font-medium">Mode</label>
+          <select id="mode" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+            <option value="same">Same CSV for both</option>
+            <option value="different">Separate CSVs</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-sm font-medium opacity-0">.</label>
+          <button id="run" class="w-full rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Run Comparison</button>
+        </div>
+      </div>
+
+      <div id="csv-inputs" class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="text-sm font-medium">CSV (question,expected_id)</label>
+          <input id="csv-a" type="file" accept=".csv" class="mt-1 w-full text-sm">
+        </div>
+        <div id="csv-b-wrap" class="hidden">
+          <label class="text-sm font-medium">CSV B (question,expected_id)</label>
+          <input id="csv-b" type="file" accept=".csv" class="mt-1 w-full text-sm">
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="download" class="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm">Download Diff CSV</button>
+        <div id="status" class="text-sm text-slate-500">—</div>
+      </div>
+    </div>
+
+    <div class="space-y-4">
+      <div id="cards" class="grid sm:grid-cols-3 gap-4"></div>
+      <div id="delta" class="grid sm:grid-cols-2 gap-4"></div>
+    </div>
+  </div>
+
+  <div class="mt-6 overflow-auto border border-slate-200 dark:border-slate-700 rounded-lg">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-900">
+        <tr>
+          <th class="text-left px-3 py-2">Question</th>
+          <th class="text-left px-3 py-2">Expected</th>
+          <th class="text-left px-3 py-2">Rank A</th>
+          <th class="text-left px-3 py-2">Score A</th>
+          <th class="text-left px-3 py-2">Rank B</th>
+          <th class="text-left px-3 py-2">Score B</th>
+          <th class="text-left px-3 py-2">Δ Rank (B−A)</th>
+          <th class="text-left px-3 py-2">Status</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+function esc(s){ return (s??'').toString().replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+
+async function fetchIndexes(){
+  const r = await fetch('/api/indexes');
+  if(!r.ok) throw new Error(await r.text());
+  const data = await r.json();
+  return (data.indexes || []).map(x => x.index_name);
+}
+
+// Unchanged helper functions
+function toCSV(rows){
+  const header = 'question,expected_id,left_rank,right_rank,delta,left_found,right_found';
+  const lines = rows.map(r => [
+    `"${(r.question||'').replace(/"/g,'""')}"`,
+    `"${(r.expected_id||'').replace(/"/g,'""')}"`,
+    r.left_rank ?? '', r.right_rank ?? '', r.delta ?? '', r.left_found, r.right_found
+  ].join(','));
+  return [header, ...lines].join('\n');
+}
+
+(async function init(){
+  const aSel = document.getElementById('index-a');
+  const bSel = document.getElementById('index-b');
+  // NOTE: hybrid controls are not used by the current backend endpoint
+  // const hybridA = document.getElementById('hybrid-a');
+  // const hybridB = document.getElementById('hybrid-b');
+  const kEl = document.getElementById('k');
+  const mode = document.getElementById('mode');
+  const runBtn = document.getElementById('run');
+  const status = document.getElementById('status');
+  const tbody = document.getElementById('tbody');
+  const cards = document.getElementById('cards');
+  const delta = document.getElementById('delta');
+  const dlBtn = document.getElementById('download');
+  const csvA = document.getElementById('csv-a');
+  const csvBWrap = document.getElementById('csv-b-wrap');
+
+  let lastRows = [];
+
+  try {
+    const names = await fetchIndexes();
+    const opts = names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') || '<option disabled>(no indexes)</option>';
+    aSel.innerHTML = opts; bSel.innerHTML = opts;
+    if(names.length > 1) bSel.value = names[1];
+  } catch (e) {
+    status.textContent = 'Failed to load indexes: ' + e;
+  }
+
+  // Hide the second CSV input, as the backend doesn't support it
+  mode.addEventListener('change', () => {
+    const v = mode.value;
+    csvBWrap.classList.toggle('hidden', v !== 'different');
+  });
+  mode.value = 'same';
+  csvBWrap.classList.add('hidden');
+
+
+  function card(label, value, sublabel=''){
+    return `<div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-900">
+      <div class="text-xs text-slate-500">${esc(label)}</div>
+      <div class="text-xl font-semibold mt-1">${esc(value)}</div>
+      ${sublabel ? `<div class="text-xs text-slate-500 mt-1">${esc(sublabel)}</div>` : ''}
+    </div>`;
+  }
+
+  // --- REWRITTEN runCompare FUNCTION ---
+  async function runCompare(){
+    const file = csvA.files?.[0];
+    if (!file) { status.textContent = 'Please choose a CSV file.'; return; }
+    if (aSel.value === bSel.value) { status.textContent = 'Please choose two different indexes to compare.'; return; }
+
+    // 1. Create a FormData object
+    const fd = new FormData();
+
+    // 2. Append the fields the backend expects
+    fd.append('left_index', aSel.value);
+    fd.append('right_index', bSel.value);
+    fd.append('k', kEl.value);
+    fd.append('file', file, file.name);
+    // You can also add include_hits here if you add a UI element for it
+    // fd.append('include_hits', '3');
+
+    status.textContent = 'Running…';
+    tbody.innerHTML = ''; cards.innerHTML = ''; delta.innerHTML = '';
+
+    // 3. Send the FormData object. Do NOT set Content-Type header.
+    const resp = await fetch('/api/eval_compare', { method:'POST', body: fd });
+    if (!resp.ok) { status.textContent = 'Error: ' + await resp.text(); return; }
+    const data = await resp.json();
+
+    const a = data.left, b = data.right;
+    cards.innerHTML = [
+      card('Recall@K', (a.recall_at_k*100).toFixed(1)+'%', `Index A: ${esc(aSel.value)}`),
+      card('Recall@K', (b.recall_at_k*100).toFixed(1)+'%', `Index B: ${esc(bSel.value)}`),
+      card('Questions', data.total),
+      card('MRR', a.mrr.toFixed(3), `Index A`),
+      card('MRR', b.mrr.toFixed(3), `Index B`),
+      card('K', data.k),
+    ].join('');
+
+    delta.innerHTML = [
+        card('Regressions', data.regressions_count, 'Index B was worse'),
+        card('Improvements', data.improvements_count, 'Index B was better'),
+        card('Total Changed', data.changed_count, 'Any change in rank'),
+    ].join('');
+
+    lastRows = data.results || [];
+    tbody.innerHTML = lastRows.map(r => {
+        let statusText = 'unchanged';
+        let cls = '';
+        if (r.delta !== null && r.delta !== 0) {
+            if (r.delta > 0) { statusText = 'regression'; cls = 'bg-red-50/60 dark:bg-red-900/20'; }
+            if (r.delta < 0) { statusText = 'improvement'; cls = 'bg-green-50/50 dark:bg-green-900/20'; }
+        }
+
+        return `<tr class="${cls}">
+            <td class="px-3 py-2">${esc(r.question)}</td>
+            <td class="px-3 py-2 font-mono text-xs">${esc(r.expected_id)}</td>
+            <td class="px-3 py-2">${r.left_rank ?? '—'}</td>
+            <td class="px-3 py-2">—</td>
+            <td class="px-3 py-2">${r.right_rank ?? '—'}</td>
+            <td class="px-3 py-2">—</td>
+            <td class="px-3 py-2">${r.delta === null ? '—' : r.delta}</td>
+            <td class="px-3 py-2">${esc(statusText)}</td>
+        </tr>`;
+    }).join('');
+
+    status.textContent = 'OK';
+  }
+
+  runBtn.addEventListener('click', runCompare);
+
+  dlBtn.addEventListener('click', () => {
+    if(!lastRows.length){ status.textContent = 'Run comparison first.'; return; }
+    const csv = toCSV(lastRows);
+    const blob = new Blob([csv], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'eval_compare_diff.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
+})();
+</script>
+{% endblock %}
+

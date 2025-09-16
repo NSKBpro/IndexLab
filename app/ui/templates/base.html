@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title or "VectorDash" }}</title>
+
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Dark mode preference
+    const theme = localStorage.getItem('theme') || 'light';
+    if (theme === 'dark') document.documentElement.classList.add('dark');
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 600: '#635bff', 700: '#5149ff' }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+  <style>
+    /* Smooth focus rings for inputs */
+    .focus-ring { outline: none; }
+    .focus-ring:focus {
+      box-shadow: 0 0 0 3px rgba(99,91,255,.35);
+    }
+    /* Nice scrollbar for logs */
+    .scroll-slim::-webkit-scrollbar { height: 8px; width: 8px; }
+    .scroll-slim::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+    .dark .scroll-slim::-webkit-scrollbar-thumb { background: #475569; }
+  </style>
+</head>
+
+<body class="h-full bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100">
+  <!-- Top Nav -->
+  <header class="border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2 font-semibold text-slate-800 dark:text-white">
+        <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white">V</span>
+        <span>VectorDash</span>
+      </a>
+      <nav class="flex items-center gap-6">
+        <a href="/" class="text-sm hover:text-brand-600">Upload</a>
+        <a href="/search" class="text-sm hover:text-brand-600">Search & Compare</a>
+        <a href="/sources" class="text-sm hover:text-brand-600">Sources</a>
+        <a href="/preview" class="text-sm hover:text-brand-600">Chunking Preview</a>
+        <a href="/analytics" class="text-sm hover:text-brand-600">Analytics</a>
+        <a href="/eval" class="text-sm hover:text-brand-600">Eval</a>
+        <a href="/eval-compare" class="text-sm hover:text-brand-600">Eval Compare</a>
+        <button id="themeToggle" class="text-sm px-3 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <span id="themeLabel">Dark</span> mode
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Page -->
+  <main class="max-w-6xl mx-auto px-4 py-8">
+    {% block body %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer class="max-w-6xl mx-auto px-4 pb-10 pt-6 text-xs text-slate-500">
+    <p>© {{ 2025 }} VectorDash • FastAPI + HTMX + Tailwind</p>
+  </footer>
+
+  <script>
+    const tBtn = document.getElementById('themeToggle');
+    const tLbl = document.getElementById('themeLabel');
+    function setTheme(mode) {
+      const root = document.documentElement;
+      if (mode === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
+      localStorage.setItem('theme', mode);
+      tLbl.textContent = (mode === 'dark') ? 'Light' : 'Dark';
+    }
+    tBtn?.addEventListener('click', () => {
+      const isDark = document.documentElement.classList.contains('dark');
+      setTheme(isDark ? 'light' : 'dark');
+    });
+    // init label
+    setTheme(localStorage.getItem('theme') || 'light');
+  </script>
+</body>
+</html>

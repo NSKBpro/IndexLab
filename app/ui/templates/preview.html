@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 class="text-2xl font-semibold mb-6">Chunking Preview</h1>
+
+<div class="grid lg:grid-cols-2 gap-6">
+  <!-- Controls -->
+  <section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+    <form id="pv-form" enctype="multipart/form-data" class="space-y-4">
+      <div class="grid sm:grid-cols-3 gap-4">
+        <div>
+          <label class="text-sm font-medium">Mode</label>
+          <select name="chunk_mode" class="mt-1 w-full rounded-md border px-3 py-2">
+            <option value="fixed_chars">fixed_chars</option>
+            <option value="sentences">sentences</option>
+            <option value="headings">headings</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-sm font-medium">Size</label>
+          <input type="number" name="chunk_size" value="1000" min="200" step="50" class="mt-1 w-full rounded-md border px-3 py-2"/>
+        </div>
+        <div>
+          <label class="text-sm font-medium">Overlap</label>
+          <input type="number" name="chunk_overlap" value="150" min="0" step="25" class="mt-1 w-full rounded-md border px-3 py-2"/>
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-3 gap-4">
+        <div>
+          <label class="text-sm font-medium">Text column (file)</label>
+          <input name="text_column" placeholder="e.g., text" class="mt-1 w-full rounded-md border px-3 py-2"/>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="inline-flex items-center gap-2 text-sm mt-6">
+            <input type="checkbox" name="full_file" id="full_file" class="rounded border"/>
+            Full file
+          </label>
+        </div>
+        <div>
+          <label class="text-sm font-medium">Rows to sample</label>
+          <input type="number" name="rows_to_sample" id="rows_to_sample" value="25" min="1" class="mt-1 w-full rounded-md border px-3 py-2"/>
+        </div>
+      </div>
+
+      <div class="grid gap-3">
+        <label class="text-sm font-medium">Paste text</label>
+        <textarea name="text" id="pv-text" rows="8"
+          class="w-full rounded-md border px-3 py-2 font-mono text-xs"
+          placeholder="Paste a few paragraphs or sections…"></textarea>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-slate-500">or upload a file</span>
+          <input type="file" name="file" accept=".csv,.xlsx,.xls,.json,.txt,.md"
+            class="block text-sm file:mr-2 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-brand-600 file:text-white hover:file:bg-brand-700"/>
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-3 gap-4 items-end">
+        <div>
+          <label class="text-sm font-medium">Page</label>
+          <input type="number" name="page" id="page" value="1" min="1" class="mt-1 w-full rounded-md border px-3 py-2"/>
+        </div>
+        <div>
+          <label class="text-sm font-medium">Page size</label>
+          <input type="number" name="page_size" id="page_size" value="100" min="1" class="mt-1 w-full rounded-md border px-3 py-2"/>
+        </div>
+        <div class="flex items-center gap-3">
+          <button type="submit" class="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Preview</button>
+          <span id="pv-status" class="text-sm text-slate-500"></span>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <!-- Results -->
+  <section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold mb-2">Chunks</h2>
+    <div id="pv-summary" class="text-sm text-slate-600 dark:text-slate-300 mb-2"></div>
+    <ol id="pv-list" class="space-y-2 max-h-[480px] overflow-auto scroll-slim">
+    <!-- sentinel must be inside the scroll container -->
+    <li id="pv-sentinel" class="h-4"></li>
+    </ol>
+
+    <div class="flex items-center justify-between mt-3">
+      <button id="prevPage" class="text-sm px-3 py-1.5 rounded-md border">Prev</button>
+      <div id="pageInfo" class="text-xs text-slate-500"></div>
+      <button id="nextPage" class="text-sm px-3 py-1.5 rounded-md border">Next</button>
+    </div>
+  </section>
+</div>
+
+<script>
+const form = document.getElementById('pv-form');
+const statusEl = document.getElementById('pv-status');
+const listEl = document.getElementById('pv-list');
+const sumEl = document.getElementById('pv-summary');
+const pageSizeEl = form.querySelector('[name="page_size"]');
+const fullFileEl = form.querySelector('[name="full_file"]');
+const rowsEl = form.querySelector('[name="rows_to_sample"]');
+const sentinel = document.getElementById('pv-sentinel');
+const nextBtn = document.getElementById('nextPage');   // keep if you still have the button
+const prevBtn = document.getElementById('prevPage');   // optional
+
+function esc(s){ return (s??'').toString().replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+fullFileEl?.addEventListener('change', () => { if (rowsEl) rowsEl.disabled = fullFileEl.checked; });
+
+// ---- Paging state ----
+let totalChunks = 0;
+let loadedEnd = 0;          // absolute count rendered
+let loading = false;
+let nextPageToLoad = 1;     // 1-based
+
+function resetPaging() {
+  totalChunks = 0;
+  loadedEnd = 0;
+  loading = false;
+  nextPageToLoad = 1;
+  statusEl.textContent = '';
+  sumEl.textContent = '';
+  // Keep only the sentinel inside the list
+  listEl.innerHTML = '<li id="pv-sentinel" class="h-4"></li>';
+}
+
+function buildFD(page) {
+  const fd = new FormData(form);
+  const file = fd.get('file');
+  if (file && file.size > 0) fd.set('text', '');
+  fd.set('page', String(page));
+  fd.set('page_size', String(pageSizeEl?.value || '100'));
+  return fd;
+}
+
+async function fetchPage(page) {
+  loading = true;
+  try {
+    const res = await fetch('/api/chunk_preview', { method:'POST', body: buildFD(page) });
+    const txt = await res.text();
+    if (!res.ok) { statusEl.textContent = `Error ${res.status}: ${txt}`; return null; }
+    return JSON.parse(txt);
+  } catch (err) {
+    statusEl.textContent = 'JS error: ' + err;
+    return null;
+  } finally {
+    loading = false;
+  }
+}
+
+function renderSummary(data){
+  const st = data.stats || {};
+  const total = data.total_chunks || 0;
+  const truncated = data.truncated_input ? ' • input TRUNCATED by safety cap' : '';
+  sumEl.innerHTML = `
+    <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 mr-2">
+      <strong class="mr-1">${total}</strong> chunks
+    </span>
+    avg=${(st.avg||0).toFixed(0)} • min=${st.min||0} • max=${st.max||0} • sample_chars=${data.sample_chars}${truncated}
+  `;
+  totalChunks = total;
+}
+
+function appendChunks(data){
+  const start = (data.page_start ?? 0) + 1;
+  const chunks = data.chunks || [];
+  if (chunks.length === 0) return;
+
+  // Insert before the sentinel
+  const frag = document.createDocumentFragment();
+  chunks.forEach((c, i) => {
+    const li = document.createElement('li');
+    li.className = "bg-slate-50 dark:bg-slate-900 rounded-md border border-slate-200 dark:border-slate-700 p-3";
+    li.innerHTML = `
+      <div class="text-xs text-slate-500 mb-1">#${(start + i)} • len=${c.length}</div>
+      <pre class="whitespace-pre-wrap text-xs">${esc(c)}</pre>`;
+    frag.appendChild(li);
+  });
+  listEl.insertBefore(frag, document.getElementById('pv-sentinel'));
+
+  loadedEnd = data.page_end ?? loadedEnd;
+}
+
+async function loadFirstPage(){
+  resetPaging();
+  statusEl.textContent = 'Running…';
+  const data = await fetchPage(1);
+  if (!data) return;
+  renderSummary(data);
+  appendChunks(data);
+  statusEl.textContent = (data.chunks && data.chunks.length) ? '' : 'No chunks produced.';
+  nextPageToLoad = 2;  // next page after a successful first load
+}
+
+async function loadNextPage(){
+  if (loading) return;
+  if (loadedEnd >= totalChunks) return;       // all done
+  const data = await fetchPage(nextPageToLoad);
+  if (!data) return;
+  appendChunks(data);
+  nextPageToLoad += 1;                        // advance only after success
+}
+
+// Infinite scroll: observe sentinel INSIDE the scrollable list
+const io = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    if (e.isIntersecting) loadNextPage();
+  }
+}, { root: listEl, threshold: 0.2 });
+io.observe(sentinel);
+
+// Submit triggers fresh run
+form.addEventListener('submit', (e) => { e.preventDefault(); loadFirstPage(); });
+
+// Optional buttons
+nextBtn?.addEventListener('click', (e) => { e.preventDefault(); loadNextPage(); });
+prevBtn?.addEventListener('click', (e) => {
+  e.preventDefault();
+  // simple prev: recompute from start up to previous page
+  const ps = Number(pageSizeEl?.value || '100');
+  const targetLast = Math.max(0, loadedEnd - ps);
+  nextPageToLoad = Math.max(1, nextPageToLoad - 1);
+  // easiest: reload from scratch (keeps code simple)
+  loadFirstPage();
+});
+</script>
+
+
+{% endblock %}

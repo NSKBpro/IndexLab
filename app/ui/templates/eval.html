@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 class="text-2xl font-semibold mb-6">Evaluation (Per-Question)</h1>
+
+<section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+  <div class="grid sm:grid-cols-5 gap-4 items-end">
+    <div class="sm:col-span-2">
+      <label class="text-sm font-medium">Index</label>
+      <select id="index-select" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+    </div>
+    <div>
+      <label class="text-sm font-medium">Top-K</label>
+      <input id="k" type="number" min="1" max="100" value="10" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+    </div>
+    <div>
+      <label class="text-sm font-medium">Hybrid</label>
+      <select id="hybrid" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+        <option value="">Default</option>
+        <option value="true">On</option>
+        <option value="false">Off</option>
+      </select>
+    </div>
+    <div>
+      <label class="text-sm font-medium">CSV (question,expected_id)</label>
+      <input id="csv" type="file" accept=".csv,.json,.xlsx" class="mt-1 w-full text-sm">
+    </div>
+  </div>
+  <div class="flex items-center gap-3 mt-4">
+    <button id="run" class="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Run Eval</button>
+    <button id="download" class="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm">Download CSV</button>
+    <div id="status" class="text-sm text-slate-500">—</div>
+  </div>
+  <div class="flex items-center gap-2">
+    <label class="inline-flex items-center gap-2 text-sm mt-6">
+      <input type="checkbox" name="return_details" checked class="rounded border" />
+      Return details
+    </label>
+    <label class="inline-flex items-center gap-1 text-sm mt-6">
+      hits:
+      <input type="number" name="include_hits" value="3" min="0" class="w-16 rounded-md border px-2 py-1"/>
+    </label>
+  </div>
+
+  <div class="mt-6 grid sm:grid-cols-3 gap-4" id="summary"></div>
+
+  <div class="mt-6 overflow-auto border border-slate-200 dark:border-slate-700 rounded-lg">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-900">
+        <tr>
+          <th class="text-left px-3 py-2">#</th>
+          <th class="text-left px-3 py-2">Question</th>
+          <th class="text-left px-3 py-2">Expected ID</th>
+          <th class="text-left px-3 py-2">Expected Answer</th>
+          <th class="text-left px-3 py-2">Rank</th>
+          <th class="text-left px-3 py-2">Score</th>
+          <th class="text-left px-3 py-2">Hits(k)</th>
+          <th class="text-left px-3 py-2">Top-1</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+function esc(s){ return (s??'').toString().replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+
+async function fetchIndexes(){
+  const r = await fetch('/api/indexes');
+  if(!r.ok) throw new Error(await r.text());
+  const data = await r.json();
+  return (data.indexes || []).map(x => x.index_name);
+}
+
+(async function init(){
+  const sel = document.getElementById('index-select');
+  const status = document.getElementById('status');
+  const tbody = document.getElementById('tbody');
+  const summary = document.getElementById('summary');
+  const runBtn = document.getElementById('run');
+  const dlBtn = document.getElementById('download');
+  const csvIn = document.getElementById('csv');
+  const kEl = document.getElementById('k');
+  const hybridEl = document.getElementById('hybrid');
+  const returnDetailsEl = document.querySelector('input[name="return_details"]');
+  const includeHitsEl = document.querySelector('input[name="include_hits"]');
+
+  let lastResults = [];
+
+  try {
+    const names = await fetchIndexes();
+    sel.innerHTML = names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') || '<option disabled>(no indexes)</option>';
+  } catch(e) {
+    status.textContent = 'Failed to load indexes: ' + e;
+  }
+
+  async function runEval(){
+    const file = csvIn.files?.[0];
+    if(!file){ status.textContent = 'Please choose a CSV.'; return; }
+
+    const fd = new FormData();
+    fd.append('index_name', sel.value);
+    fd.append('k', String(parseInt(kEl.value || '10', 10)));
+    if (hybridEl.value === 'true') fd.append('hybrid', 'true');
+    if (hybridEl.value === 'false') fd.append('hybrid', 'false');
+    fd.append('return_details', returnDetailsEl.checked);
+    fd.append('include_hits', includeHitsEl.value);
+    fd.append('file', file, file.name);
+
+    status.textContent = 'Running…';
+    tbody.innerHTML = '';
+    summary.innerHTML = '';
+
+    const resp = await fetch('/api/eval', { method:'POST', body: fd });
+    if(!resp.ok){ status.textContent = 'Error: ' + await resp.text(); return; }
+    const data = await resp.json();
+
+    summary.innerHTML = `
+      <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-900">
+        <div class="text-xs text-slate-500">Questions</div>
+        <div class="text-xl font-semibold mt-1">${esc(data.total ?? 0)}</div>
+      </div>
+      <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-900">
+        <div class="text-xs text-slate-500">Recall@K</div>
+        <div class="text-xl font-semibold mt-1">${data.recall_at_k != null ? (data.recall_at_k*100).toFixed(1)+'%' : '—'}</div>
+      </div>
+      <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-900">
+        <div class="text-xs text-slate-500">MRR</div>
+        <div class="text-xl font-semibold mt-1">${data.mrr != null ? data.mrr.toFixed(3) : '—'}</div>
+      </div>`;
+
+    const results = data.results || [];
+    lastResults = results;
+
+    tbody.innerHTML = results.map((d, i) => {
+        const topId = d.top_ids?.[0];
+        const topScore = d.top_scores?.[0];
+        const hitsPreview = (d.hits || []).map(h => 
+            `<div><span class="font-mono text-xs">${esc(h.id)}</span> (${h.score.toFixed(4)})<br><span class="text-slate-500">${esc(h.preview)}</span></div>`
+        ).join('');
+
+        // 2. FIND THE EXPECTED ANSWER FROM THE HITS ARRAY
+        let expectedPreview = '—';
+        if (d.found && d.hits) {
+            const expectedHit = d.hits.find(h => h.id === d.expected_id);
+            if (expectedHit) {
+                expectedPreview = expectedHit.preview;
+            }
+        }
+
+        return `
+          <tr class="${d.found ? '' : 'bg-red-50/60 dark:bg-red-900/20'}">
+            <td class="px-3 py-2 align-top">${i+1}</td>
+            <td class="px-3 py-2 align-top">${esc(d.question)}</td>
+            <td class="px-3 py-2 align-top">${esc(d.expected_id)}</td>
+            <td class="px-3 py-2 align-top text-slate-500">${esc(expectedPreview)}</td>
+            <td class="px-3 py-2 align-top">${d.rank ?? '—'}</td>
+            <td class="px-3 py-2 align-top">${d.found ? (d.top_scores[d.rank-1] ?? 0).toFixed(4) : '—'}</td>
+            <td class="px-3 py-2 align-top">${hitsPreview || '—'}</td>
+            <td class="px-3 py-2 align-top">
+              ${topId ? `<span class="font-mono">${esc(topId)}</span> (${(topScore??0).toFixed(4)})` : '—'}
+            </td>
+          </tr>
+        `
+    }).join('');
+
+    status.textContent = 'OK';
+  }
+
+  runBtn.addEventListener('click', runEval);
+
+  function toCSV(rows){
+    const header = 'question,expected_id,expected_answer,found,rank,score,top1_id,top1_score';
+    const lines = rows.map(r => {
+        // 3. ADD THE SAME LOGIC TO THE CSV EXPORT
+        let expectedPreview = '';
+        if (r.found && r.hits) {
+            const expectedHit = r.hits.find(h => h.id === r.expected_id);
+            if (expectedHit) {
+                expectedPreview = expectedHit.preview;
+            }
+        }
+        return [
+          `"${(r.question||'').replace(/"/g,'""')}"`,
+          `"${(r.expected_id||'').replace(/"/g,'""')}"`,
+          `"${(expectedPreview||'').replace(/"/g,'""')}"`,
+          r.found,
+          r.rank ?? '',
+          r.found ? (r.top_scores[r.rank-1] ?? '') : '',
+          r.top_ids?.[0] ?? '',
+          r.top_scores?.[0] ?? ''
+        ].join(',');
+    });
+    return [header, ...lines].join('\n');
+  }
+
+  dlBtn.addEventListener('click', () => {
+    if(!lastResults.length){ status.textContent = 'Run eval first.'; return; }
+    const csv = toCSV(lastResults);
+    const blob = new Blob([csv], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'eval_details.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
+})();
+</script>
+{% endblock %}
