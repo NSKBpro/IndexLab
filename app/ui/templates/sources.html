@@ -3,7 +3,7 @@
 <div class="mb-6 flex items-center justify-between">
   <div>
     <h1 class="text-2xl font-semibold">Sources</h1>
-    <p class="text-sm text-slate-500 mt-1">Pick an index to view its ingested files and metadata. Filter, sort, export.</p>
+    <p class="text-sm text-slate-500 mt-1">Pick an index/version to view ingested files and metadata. Filter, sort, export.</p>
   </div>
   <div class="flex items-center gap-2">
     <button id="btn-health" class="rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-sm hover:bg-emerald-500">Health</button>
@@ -12,10 +12,16 @@
 
 <section class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
   <!-- Controls -->
-  <div class="grid md:grid-cols-3 gap-4 items-end">
+  <div class="grid md:grid-cols-4 gap-4 items-end">
     <div>
       <label class="text-sm font-medium">Index</label>
       <select id="index-select" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+    </div>
+    <div>
+      <label class="text-sm font-medium">Version (optional)</label>
+      <select id="version-select" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+        <option value="">(latest)</option>
+      </select>
     </div>
     <div>
       <label class="text-sm font-medium">Filter</label>
@@ -28,9 +34,7 @@
   </div>
 
   <!-- Summary -->
-  <div id="summary-cards" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
-    <!-- cards injected -->
-  </div>
+  <div id="summary-cards" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-6"></div>
 
   <!-- Table -->
   <div class="mt-4">
@@ -50,9 +54,7 @@
       </div>
     </div>
     <div class="overflow-auto">
-      <table id="src-table" class="min-w-full text-sm">
-        <!-- head/body injected -->
-      </table>
+      <table id="src-table" class="min-w-full text-sm"></table>
       <div id="table-skeleton" class="space-y-2 hidden">
         <div class="animate-pulse h-8 rounded bg-slate-200/60 dark:bg-slate-700/40"></div>
         <div class="animate-pulse h-8 rounded bg-slate-200/60 dark:bg-slate-700/40"></div>
@@ -67,70 +69,201 @@
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden rounded-xl bg-slate-900 text-white px-4 py-2 shadow-lg"></div>
 
 <script>
+/* ===== Global error trap so silent JS errors don’t kill the page ===== */
+window.addEventListener('error', (e) => {
+  const t = document.getElementById('toast');
+  if (t){ t.textContent = 'JS error: ' + (e?.message || e); t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'), 3000); }
+  console.error('Global error:', e);
+});
+
+/* ---------- Canonical index/version helpers ---------- */
+const IndexLab = {
+  _cache: { idx: null, idx_exp: 0, ver: new Map() },
+
+  async fetchIndexes(force=false){
+    const now = Date.now();
+    if (!force && this._cache.idx && this._cache.idx_exp > now) return this._cache.idx;
+    const r = await fetch('/api/indexes'); const j = await r.json();
+    const arr = Array.isArray(j.indexes) ? j.indexes : [];
+    this._cache.idx = arr; this._cache.idx_exp = now + 30_000;
+    return arr;
+  },
+
+  async populateIndexSelect(selectEl, {value=null, includePlaceholder=true}={}){
+    const sel = (typeof selectEl === 'string') ? document.querySelector(selectEl) : selectEl;
+    if (!sel) return;
+    const items = await this.fetchIndexes();
+    sel.innerHTML = '';
+    if (includePlaceholder) {
+      const opt = document.createElement('option'); opt.value=''; opt.textContent='(choose index)'; sel.appendChild(opt);
+    }
+    for (const it of items){
+      const o = document.createElement('option');
+      o.value = it.index_name;
+      o.textContent = it.index_name + (it.latest_version ? ` · v${it.latest_version}` : '');
+      sel.appendChild(o);
+    }
+    if (value && [...sel.options].some(o=>o.value===value)) sel.value = value;
+    return sel.value;
+  },
+
+  async fetchVersions(indexName){
+    if (!indexName) return [];
+    const cached = this._cache.ver.get(indexName);
+    if (cached) return cached;
+    const r = await fetch(`/api/versioning/${encodeURIComponent(indexName)}`);
+    const j = await r.json();
+    const arr = Array.isArray(j.versions) ? j.versions : [];
+    this._cache.ver.set(indexName, arr);
+    return arr;
+  },
+
+  async populateVersionSelect(selectEl, indexName, {value=null}={}){
+    const sel = (typeof selectEl === 'string') ? document.querySelector(selectEl) : selectEl;
+    if (!sel) return;
+    const versions = await this.fetchVersions(indexName);
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">(latest)</option>';
+    for (const v of versions){
+      const o = document.createElement('option');
+      o.value = v.version;
+      const when = v.created_at ? ` — ${new Date(v.created_at).toISOString().replace('T',' ').slice(0,16)}Z` : '';
+      o.textContent = `v${v.version}${when}`;
+      sel.appendChild(o);
+    }
+    const desired = value || prev;
+    if (desired && [...sel.options].some(o=>o.value===desired)) sel.value = desired;
+  }
+};
+
 /* ---------- utils ---------- */
-const qs=(s,el=document)=>el.querySelector(s), qsa=(s,el=document)=>[...el.querySelectorAll(s)];
+const qs=(s,el=document)=>el.querySelector(s);
+const qsa=(s,el=document)=>[...el.querySelectorAll(s)];
 const toast=(m)=>{const t=qs('#toast'); t.textContent=m; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),1500);};
 const save=(k,v)=>localStorage.setItem(k, JSON.stringify(v));
 const load=(k,d)=>{ try{return JSON.parse(localStorage.getItem(k)) ?? d;} catch {return d;} };
 const fmtDate=(s)=> s ? new Date(s).toISOString().replace('T',' ').slice(0,19)+' UTC' : '';
-const esc=(x)=> (x??'').toString().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function esc(x){ return (x??'').toString().replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
 /* ---------- state ---------- */
-let RAW_ROWS = [];          // full set from server [{file, rows, sha256, added_at, url?}]
-let VIEW_ROWS = [];         // filtered + sorted
+let RAW_ROWS = [];
+let VIEW_ROWS = [];
 let SORT = { key: 'file', dir: 'asc' };
 let PAGE = 1;
 let PAGE_SIZE = 10;
 let CURRENT_INDEX = '';
+let CURRENT_VERSION = '';
 
 /* ---------- init ---------- */
 (async function init(){
-  // deep link (?index=foo&autoload=1)
-  const params = new URLSearchParams(location.search);
-  const idxFromUrl = params.get('index');
-  const autoload = params.get('autoload') === '1';
+  try{
+    // deep link (?index=foo&version=YYYYMMDD-HHMMSS&autoload=1)
+    const params = new URLSearchParams(location.search);
+    const idxFromUrl = params.get('index');
+    const verFromUrl = params.get('version');
+    const autoload = params.get('autoload') === '1';
 
-  await fetchIndexes();
-  const sel = qs('#index-select');
-  const saved = load('indexlab_sources_index', null);
+    // populate Index select
+    const sel = qs('#index-select');
+    await IndexLab.populateIndexSelect(sel, { value: idxFromUrl || load('indexlab_sources_index', null), includePlaceholder: false });
+    CURRENT_INDEX = sel.value || '';
 
-  if (idxFromUrl && [...sel.options].some(o=>o.value===idxFromUrl)) sel.value = idxFromUrl;
-  else if (saved && [...sel.options].some(o=>o.value===saved)) sel.value = saved;
+    // populate Version select for the chosen index
+    await IndexLab.populateVersionSelect('#version-select', CURRENT_INDEX, { value: verFromUrl || load('indexlab_sources_version', '') });
+    CURRENT_VERSION = qs('#version-select').value || '';
 
-  if (autoload || sel.value) loadSources();
+    // events
+    qs('#load-btn').addEventListener('click', loadSources);
+    qs('#filter-input').addEventListener('input', () => { PAGE=1; applyFilterSortPaginate(); renderTable(); });
+    qs('#page-size').addEventListener('change', (e)=> { PAGE_SIZE = Number(e.target.value||10); PAGE=1; renderTable(); save('indexlab_sources_psize', PAGE_SIZE); });
+    PAGE_SIZE = Number(load('indexlab_sources_psize', 10));
+    qs('#page-size').value = PAGE_SIZE;
+    qs('#prev-page').addEventListener('click', ()=>{ if (PAGE>1){ PAGE--; renderTable(); }});
+    qs('#next-page').addEventListener('click', ()=>{ const max = Math.max(1, Math.ceil(VIEW_ROWS.length / PAGE_SIZE)); if (PAGE<max){ PAGE++; renderTable(); }});
+    qs('#export-btn').addEventListener('click', exportCSV);
+    qs('#btn-health').addEventListener('click', pingHealth);
 
-  // events
-  qs('#load-btn').addEventListener('click', loadSources);
-  qs('#filter-input').addEventListener('input', () => { PAGE=1; applyFilterSortPaginate(); renderTable(); });
-  qs('#page-size').addEventListener('change', (e)=> { PAGE_SIZE = Number(e.target.value||10); PAGE=1; renderTable(); save('indexlab_sources_psize', PAGE_SIZE); });
-  PAGE_SIZE = Number(load('indexlab_sources_psize', 10));
-  qs('#page-size').value = PAGE_SIZE;
-  qs('#prev-page').addEventListener('click', ()=>{ if (PAGE>1){ PAGE--; renderTable(); }});
-  qs('#next-page').addEventListener('click', ()=>{ const max = Math.max(1, Math.ceil(VIEW_ROWS.length / PAGE_SIZE)); if (PAGE<max){ PAGE++; renderTable(); }});
-  qs('#export-btn').addEventListener('click', exportCSV);
-  qs('#btn-health').addEventListener('click', pingHealth);
+    // on index change, refresh versions and reload
+    sel.addEventListener('change', async ()=>{
+      CURRENT_INDEX = sel.value || '';
+      await IndexLab.populateVersionSelect('#version-select', CURRENT_INDEX);
+      CURRENT_VERSION = qs('#version-select').value || '';
+      loadSources();
+    });
 
-  // hotkey: Ctrl/Cmd + Enter loads
-  document.addEventListener('keydown', (e)=> {
-    if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return;
-    loadSources();
-  });
+    // on version change, reload
+    qs('#version-select').addEventListener('change', ()=>{
+      CURRENT_VERSION = qs('#version-select').value || '';
+      loadSources();
+    });
+
+    // hotkey: Ctrl/Cmd + Enter loads
+    document.addEventListener('keydown', (e)=> {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return;
+      loadSources();
+    });
+
+    // auto-load
+    if (autoload || CURRENT_INDEX) loadSources();
+  }catch(e){
+    console.error('init error', e);
+    toast('Init error: ' + (e?.message || e));
+  }
 })();
 
 /* ---------- fetchers ---------- */
-async function fetchIndexes(){
+async function loadSources(){
+  const name = qs('#index-select').value;
+  const version = qs('#version-select').value || '';
+  if(!name){ toast('Pick an index'); return; }
+  CURRENT_INDEX = name; CURRENT_VERSION = version;
+  save('indexlab_sources_index', name);
+  save('indexlab_sources_version', version);
+
+  // update URL for shareability
+  const p = new URLSearchParams({ index:name, autoload:'1' });
+  if (version) p.set('version', version);
+  history.replaceState(null, '', `?${p.toString()}`);
+
+  // skeleton
+  toggleSkeleton(true);
+  qs('#src-table').innerHTML = '';
+  qs('#summary-cards').innerHTML = '';
+  qs('#summary').textContent = 'Loading…';
+
   try{
-    const r = await fetch('/api/indexes');
-    const data = await r.json();
-    const sel = qs('#index-select');
-    sel.innerHTML = (data.indexes||[]).map(x => `<option value="${esc(x.index_name)}">${esc(x.index_name)}</option>`).join('') || '<option value="">(no indexes)</option>';
+    const url = `/api/sources/${encodeURIComponent(name)}${version ? `?version=${encodeURIComponent(version)}` : ''}`;
+    const r = await fetch(url);
+    const txt = await r.text();
+    if (!r.ok) {
+      qs('#summary').textContent = `Error ${r.status}: ${txt}`;
+      RAW_ROWS = []; VIEW_ROWS = []; renderTable();
+      return;
+    }
+    const data = JSON.parse(txt);
+
+    renderSummaryCards(data, version);
+    const built = data.created_at ?? '—';
+    qs('#summary').textContent =
+      `index=${data.index_name || name} ` +
+      (version ? `• version=${version} ` : '') +
+      `• chunks=${data.count ?? '—'} • model=${data.model ?? '—'} • backend=${data.backend ?? '—'} • created_at=${built}`;
+
+    RAW_ROWS = normalizeSources(data.sources ?? data.manifest?.sources ?? null);
+    PAGE = 1;
+    SORT = { key: 'file', dir: 'asc' };
+    applyFilterSortPaginate();
+    renderTable();
   }catch(e){
-    toast('Failed to load indexes'); console.error(e);
+    console.error('loadSources error', e);
+    qs('#summary').textContent = 'Failed to load sources (JS).';
+    qs('#src-table').innerHTML = '';
+  }finally{
+    toggleSkeleton(false);
   }
 }
 
-/* ---------- Safer source normalization (added) ---------- */
-// Accept object map or array; include optional url/origin_url/path if present
+/* ---------- normalization ---------- */
 function normalizeSources(sources){
   if (!sources) return [];
   if (Array.isArray(sources)) {
@@ -154,46 +287,8 @@ function normalizeSources(sources){
   return [];
 }
 
-async function loadSources(){
-  const name = qs('#index-select').value;
-  if(!name){ toast('Pick an index'); return; }
-  CURRENT_INDEX = name;
-  save('indexlab_sources_index', name);
-  // update URL
-  const p = new URLSearchParams({ index:name, autoload:'1' });
-  history.replaceState(null, '', `?${p.toString()}`);
-
-  // skeleton
-  toggleSkeleton(true);
-  qs('#src-table').innerHTML = '';
-  qs('#summary-cards').innerHTML = '';
-  qs('#summary').textContent = 'Loading…';
-
-  try{
-    const r = await fetch(`/api/sources/${encodeURIComponent(name)}`);
-    const data = await r.json();
-
-    // summary
-    renderSummaryCards(data);
-    qs('#summary').textContent = `index=${data.index_name || name} • chunks=${data.count ?? '—'} • model=${data.model ?? '—'} • backend=${data.backend ?? '—'} • created_at=${data.created_at ?? '—'}`;
-
-    // rows (now using safer normalization)
-    RAW_ROWS = normalizeSources(data.sources);
-    PAGE = 1;
-    SORT = { key: 'file', dir: 'asc' };
-    applyFilterSortPaginate();
-    renderTable();
-  }catch(e){
-    console.error(e);
-    qs('#summary').textContent = 'Failed to load sources.';
-    qs('#src-table').innerHTML = '';
-  }finally{
-    toggleSkeleton(false);
-  }
-}
-
 /* ---------- summary cards ---------- */
-function renderSummaryCards(data){
+function renderSummaryCards(data, version){
   const box = (label, value, sub='') => `
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900/60">
       <div class="text-xs text-slate-500">${label}</div>
@@ -201,7 +296,7 @@ function renderSummaryCards(data){
       ${sub ? `<div class="text-[11px] text-slate-500 mt-1">${esc(sub)}</div>` : ''}
     </div>`;
   const cards = [
-    box('Index', data.index_name || CURRENT_INDEX),
+    box('Index', data.index_name || CURRENT_INDEX, version ? `v${version}` : '(latest)'),
     box('Chunks', data.count ?? '—'),
     box('Model', data.model ?? '—', data.dim ? `${data.dim} dims` : ''),
     box('Backend', data.backend ?? '—', data.created_at ? fmtDate(data.created_at) : '')
@@ -247,12 +342,10 @@ function renderTable(){
     <tbody>
       ${pageRows.map(r => `
         <tr class="odd:bg-slate-50 dark:odd:bg-slate-800/40">
-          <td class="px-2 py-2">
-            <div class="font-medium">${esc(r.file)}</div>
-          </td>
+          <td class="px-2 py-2"><div class="font-medium">${esc(r.file)}</div></td>
           <td class="px-2 py-2">${r.rows ?? ''}</td>
           <td class="px-2 py-2 font-mono text-xs">
-            ${r.sha256 ? `<span title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</span>` : ''}
+            ${r.sha256 ? `<span title="${esc(r.sha256)}">${esc((r.sha256||'').slice(0, 12))}…</span>` : ''}
           </td>
           <td class="px-2 py-2">${esc(r.added_at || '')}</td>
           <td class="px-2 py-2">
@@ -291,12 +384,10 @@ function renderTable(){
 /* ---------- filtering, sorting ---------- */
 function applyFilterSortPaginate(){
   const q = (qs('#filter-input').value || '').toLowerCase().trim();
-  // filter
   VIEW_ROWS = RAW_ROWS.filter(r => {
     if (!q) return true;
     return [r.file, r.sha256, r.added_at, r.rows?.toString() || ''].some(v => (v||'').toString().toLowerCase().includes(q));
   });
-  // sort
   const key = SORT.key, dir = SORT.dir;
   VIEW_ROWS.sort((a,b) => {
     const av=a[key], bv=b[key];
@@ -309,14 +400,14 @@ function applyFilterSortPaginate(){
 /* ---------- export ---------- */
 function exportCSV(){
   if (!VIEW_ROWS.length){ toast('Nothing to export'); return; }
-  const header = ['file','rows','sha256','added_at'];
+  const header = ['index','version','file','rows','sha256','added_at'];
   const lines = [header.join(',')].concat(VIEW_ROWS.map(r => [
-    csvCell(r.file), csvCell(r.rows), csvCell(r.sha256), csvCell(r.added_at)
+    csvCell(CURRENT_INDEX), csvCell(CURRENT_VERSION || '(latest)'), csvCell(r.file), csvCell(r.rows), csvCell(r.sha256), csvCell(r.added_at)
   ].join(',')));
   const blob = new Blob([lines.join('\n')], {type: 'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `sources_${CURRENT_INDEX||'index'}.csv`;
+  a.href = url; a.download = `sources_${CURRENT_INDEX}${CURRENT_VERSION?`_v${CURRENT_VERSION}`:''}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }

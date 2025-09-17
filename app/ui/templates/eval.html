@@ -4,10 +4,16 @@
 
 <section class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
   <!-- Controls -->
-  <div class="grid sm:grid-cols-5 gap-4 items-end">
+  <div class="grid sm:grid-cols-6 gap-4 items-end">
     <div class="sm:col-span-2">
       <label class="text-sm font-medium">Index</label>
       <select id="index-select" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+    </div>
+    <div>
+      <label class="text-sm font-medium">Version (optional)</label>
+      <select id="version-select" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+        <option value="">(latest)</option>
+      </select>
     </div>
     <div>
       <label class="text-sm font-medium">Top-K</label>
@@ -89,7 +95,59 @@
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden rounded-xl bg-slate-900 text-white px-4 py-2 shadow-lg"></div>
 
 <script>
-// ============== utils ==============
+// ===== Global error toast =====
+window.addEventListener('error', (e) => {
+  const t=document.getElementById('toast'); if(t){t.textContent='JS error: '+(e?.message||e); t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),3000);}
+  console.error(e);
+});
+
+// ===== Index/version helpers (shared style with Analytics/Sources) =====
+const IndexLab = {
+  _cache: { idx:null, exp:0, ver:new Map() },
+
+  async fetchIndexes(force=false){
+    const now=Date.now();
+    if(!force && this._cache.idx && this._cache.exp>now) return this._cache.idx;
+    const r=await fetch('/api/indexes'); const j=await r.json();
+    const arr = Array.isArray(j.indexes) ? j.indexes : [];
+    this._cache.idx = arr; this._cache.exp = now + 30000;
+    return arr;
+  },
+
+  async populateIndexSelect(selectEl, {value=null}={}){
+    const sel = (typeof selectEl==='string') ? document.querySelector(selectEl) : selectEl;
+    if(!sel) return;
+    const items = await this.fetchIndexes();
+    sel.innerHTML = items.map(it=>`<option value="${esc(it.index_name)}">${esc(it.index_name)}</option>`).join('') || '<option disabled>(no indexes)</option>';
+    if(value && [...sel.options].some(o=>o.value===value)) sel.value=value;
+    return sel.value;
+  },
+
+  async fetchVersions(indexName){
+    if(!indexName) return [];
+    if(this._cache.ver.has(indexName)) return this._cache.ver.get(indexName);
+    const r = await fetch(`/api/versioning/${encodeURIComponent(indexName)}`);
+    const j = await r.json();
+    const versions = Array.isArray(j.versions) ? j.versions : [];
+    this._cache.ver.set(indexName, versions);
+    return versions;
+  },
+
+  async populateVersionSelect(selectEl, indexName, {value=null}={}){
+    const sel = (typeof selectEl==='string') ? document.querySelector(selectEl) : selectEl;
+    if(!sel) return;
+    const versions = await this.fetchVersions(indexName);
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">(latest)</option>' + versions.map(v=>{
+      const when = v.created_at ? ` — ${new Date(v.created_at).toISOString().replace('T',' ').slice(0,16)}Z` : '';
+      return `<option value="${esc(v.version)}">v${esc(v.version)}${when}</option>`;
+    }).join('');
+    const desired = value || prev;
+    if(desired && [...sel.options].some(o=>o.value===desired)) sel.value=desired;
+  }
+};
+
+// ===== utils =====
 const qs=(s,el=document)=>el.querySelector(s);
 const qsa=(s,el=document)=>[...el.querySelectorAll(s)];
 const esc=(s)=> (s??'').toString().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -114,14 +172,17 @@ function normalizeIndexes(x){
   }).filter(Boolean);
 }
 
-// ============== chunk modal ==============
-async function openChunk(indexName, docId, qText){
+// ===== chunk modal =====
+async function openChunk(indexName, docId, qText, version){
   const modal=qs('#chunk-modal'), title=qs('#chunk-title'), body=qs('#chunk-body');
   title.textContent=`index: ${indexName} • id: ${docId}`; body.textContent='Loading…';
   modal.classList.remove('hidden'); modal.classList.add('flex');
   try{
-    const url = `/api/chunk?index_name=${encodeURIComponent(indexName)}&doc_id=${encodeURIComponent(docId)}&q=${encodeURIComponent(qText||'')}`;
-    const res = await fetch(url);
+    const params = new URLSearchParams({
+      index_name: indexName, doc_id: docId, q: qText||''
+    });
+    if (version) params.set('version', version); // only if your backend supports it
+    const res = await fetch(`/api/chunk?${params.toString()}`);
     const txt = await res.text();
     if (!res.ok){ body.textContent=`Error ${res.status}: ${txt}`; return; }
     const data = JSON.parse(txt);
@@ -137,20 +198,21 @@ async function openChunk(indexName, docId, qText){
   qs('#chunk-copy').addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(qs('#chunk-body').textContent||''); toast('Copied'); }catch{ toast('Copy failed'); } });
 })();
 
-// ============== data / state ==============
+// ===== data / state =====
 let RAW_RESULTS = [];   // full payload results
 let VIEW = [];          // filtered + sorted
 let SORT = { key: 'rank', dir: 'asc' };
 
-// ============== fetchers ==============
+// ===== fetchers =====
 async function fetchIndexes(){
   const r = await fetch('/api/indexes');
   const data = await r.json();
   return normalizeIndexes(data);
 }
-async function runEvalFetch({index, k, hybrid, return_details, include_hits, file}){
+async function runEvalFetch({index, version, k, hybrid, return_details, include_hits, file}){
   const fd=new FormData();
   fd.append('index_name', index);
+  if (version) fd.append('version', version);        // backend should accept this (ignored if not supported)
   fd.append('k', String(k));
   if (hybrid===true) fd.append('hybrid', 'true');
   if (hybrid===false) fd.append('hybrid', 'false');
@@ -162,7 +224,7 @@ async function runEvalFetch({index, k, hybrid, return_details, include_hits, fil
   return await resp.json();
 }
 
-// ============== table rendering helpers ==============
+// ===== table rendering helpers =====
 function expectedPreviewFromHits(row){
   if (!row?.hits || !row?.expected_id) return '';
   const h = row.hits.find(h => h.id === row.expected_id);
@@ -174,11 +236,11 @@ function scoreAtRank(row){
   const v = row.top_scores[idx];
   return (typeof v === 'number') ? v.toFixed(4) : '';
 }
-function hitsBlock(row, indexName){
+function hitsBlock(row, indexName, version){
   const hits = Array.isArray(row?.hits) ? row.hits : [];
   if (!hits.length) return '—';
   return hits.map(h => {
-    const openBtn = `<button class="ml-2 text-[11px] underline" onclick='openChunk(${JSON.stringify(indexName)}, ${JSON.stringify(h.id||"")}, ${JSON.stringify(row.question||"")})'>Open</button>`;
+    const openBtn = `<button class="ml-2 text-[11px] underline" onclick='openChunk(${JSON.stringify(indexName)}, ${JSON.stringify(h.id||"")}, ${JSON.stringify(row.question||"")}, ${JSON.stringify(version||"")})'>Open</button>`;
     return `
       <div class="mb-2">
         <span class="font-mono text-xs">${esc(h.id||'')}</span>
@@ -188,14 +250,14 @@ function hitsBlock(row, indexName){
       </div>`;
   }).join('');
 }
-function top1Cell(row, indexName){
+function top1Cell(row, indexName, version){
   const id = row?.top_ids?.[0];
   const sc = row?.top_scores?.[0];
   if (!id) return '—';
   const ok = id===row.expected_id;
   const tag = ok ? `<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">match</span>`
                  : `<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-800">miss</span>`;
-  const openBtn = `<button class="ml-2 text-[11px] underline" onclick='openChunk(${JSON.stringify(indexName)}, ${JSON.stringify(id)}, ${JSON.stringify(row.question||"")})'>Open</button>`;
+  const openBtn = `<button class="ml-2 text-[11px] underline" onclick='openChunk(${JSON.stringify(indexName)}, ${JSON.stringify(id)}, ${JSON.stringify(row.question||"")}, ${JSON.stringify(version||"")})'>Open</button>`;
   return `<span class="font-mono">${esc(id)}</span> (${typeof sc==='number'?sc.toFixed(4):'—'}) ${tag} ${openBtn}`;
 }
 function rowClass(row){
@@ -204,10 +266,9 @@ function rowClass(row){
   return 'bg-amber-50/50 dark:bg-amber-900/20';
 }
 
-// ============== render ==============
+// ===== render =====
 function renderSummaryCards(payload){
   const total = payload?.total ?? RAW_RESULTS.length;
-  // fallbacks if server didn't send these
   const recall = (payload?.recall_at_k != null) ? payload.recall_at_k
                 : (total? (RAW_RESULTS.filter(r=>r.found).length/total) : 0);
   const mrr = (payload?.mrr != null) ? payload.mrr
@@ -238,7 +299,6 @@ function applyFilterSort(){
     ].join(' ').toLowerCase();
     return hay.includes(q);
   });
-  // sort
   const key = SORT.key, dir = SORT.dir;
   VIEW.sort((a,b)=>{
     const cmp = (x,y)=>{
@@ -248,7 +308,7 @@ function applyFilterSort(){
       if (typeof x==='number' && typeof y==='number') return x-y;
       return String(x).localeCompare(String(y));
     };
-    if (key==='score'){ // score at rank
+    if (key==='score'){
       const sa = parseFloat(scoreAtRank(a)) || -Infinity;
       const sb = parseFloat(scoreAtRank(b)) || -Infinity;
       return dir==='asc' ? sa-sb : sb-sa;
@@ -261,7 +321,7 @@ function applyFilterSort(){
   });
 }
 
-function renderTable(indexName){
+function renderTable(indexName, version){
   applyFilterSort();
   const tbody = qs('#tbody');
   if (!VIEW.length){
@@ -269,11 +329,9 @@ function renderTable(indexName){
     return;
   }
   tbody.innerHTML = VIEW.map((d, i) => {
-    const topId = d.top_ids?.[0];
-    const topScore = (typeof d.top_scores?.[0]==='number') ? d.top_scores[0].toFixed(4) : '—';
     const expPrev = expectedPreviewFromHits(d);
     const scAt = scoreAtRank(d);
-    const hitsHTML = hitsBlock(d, indexName);
+    const hitsHTML = hitsBlock(d, indexName, version);
     const cls = rowClass(d);
     return `
       <tr class="${cls}">
@@ -290,12 +348,12 @@ function renderTable(indexName){
         <td class="px-3 py-2 align-top">${d.found ? (d.rank ?? '—') : '—'}</td>
         <td class="px-3 py-2 align-top">${d.found ? scAt : '—'}</td>
         <td class="px-3 py-2 align-top">${hitsHTML}</td>
-        <td class="px-3 py-2 align-top">${top1Cell(d, indexName)}</td>
+        <td class="px-3 py-2 align-top">${top1Cell(d, indexName, version)}</td>
       </tr>`;
   }).join('');
 }
 
-// ============== CSV export ==============
+// ===== CSV export =====
 function toCSV(rows){
   const header = ['question','expected_id','expected_answer','found','rank','score','top1_id','top1_score'];
   const lines = rows.map(r=>{
@@ -321,9 +379,10 @@ function toCSV(rows){
   return [header.join(','), ...lines].join('\n');
 }
 
-// ============== main ==============
+// ===== main =====
 (async function init(){
   const sel = qs('#index-select');
+  const ver = qs('#version-select');
   const status = qs('#status');
   const runBtn = qs('#run');
   const dlBtn = qs('#download');
@@ -333,28 +392,35 @@ function toCSV(rows){
   const retDet = qs('#return_details');
   const inclHits = qs('#include_hits');
 
-  // deep link (?index=foo&k=10&hybrid=true&autoload=1)
+  // deep link (?index=foo&version=YYYY…&k=10&hybrid=true&autoload=1)
   const params = new URLSearchParams(location.search);
   const idxFromUrl = params.get('index');
+  const verFromUrl = params.get('version');
   const kFromUrl = params.get('k');
   const hybridFromUrl = params.get('hybrid');
   const autoload = params.get('autoload') === '1';
 
   try{
-    const names = await fetchIndexes();
-    sel.innerHTML = names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('') || '<option disabled>(no indexes)</option>';
-    if (idxFromUrl && names.includes(idxFromUrl)) sel.value = idxFromUrl;
+    await IndexLab.populateIndexSelect(sel, { value: idxFromUrl });
+    await IndexLab.populateVersionSelect(ver, sel.value, { value: verFromUrl });
     if (kFromUrl) kEl.value = kFromUrl;
     if (hybridFromUrl==='true' || hybridFromUrl==='false') hybridEl.value = hybridFromUrl;
   }catch(e){
-    status.textContent = 'Failed to load indexes: ' + e;
+    status.textContent = 'Failed to load indexes/versions: ' + e;
   }
+
+  // keep version list in sync with index choice
+  sel.addEventListener('change', async ()=>{
+    await IndexLab.populateVersionSelect(ver, sel.value);
+    status.textContent='Index changed.';
+  });
 
   async function runEval(){
     const file = csvIn.files?.[0];
     if (!file){ status.textContent = 'Please choose a CSV.'; return; }
 
     const index = sel.value;
+    const version = ver.value || '';
     const k = Math.max(1, parseInt(kEl.value||'10',10));
     const hybrid = (hybridEl.value==='true') ? true : (hybridEl.value==='false' ? false : undefined);
     const return_details = retDet.checked;
@@ -362,6 +428,7 @@ function toCSV(rows){
 
     // update URL (shareable)
     const p = new URLSearchParams({ index, k:String(k), autoload:'1' });
+    if (version) p.set('version', version);
     if (hybrid!==undefined) p.set('hybrid', String(hybrid));
     history.replaceState(null,'',`?${p.toString()}`);
 
@@ -371,7 +438,7 @@ function toCSV(rows){
 
     let payload;
     try{
-      payload = await runEvalFetch({index, k, hybrid, return_details, include_hits, file});
+      payload = await runEvalFetch({index, version, k, hybrid, return_details, include_hits, file});
     }catch(err){
       status.textContent = 'Error: ' + err.message;
       return;
@@ -379,7 +446,7 @@ function toCSV(rows){
 
     RAW_RESULTS = Array.isArray(payload?.results) ? payload.results : [];
     renderSummaryCards(payload || {});
-    renderTable(index);
+    renderTable(index, version);
     status.textContent = 'OK';
   }
 
@@ -387,14 +454,14 @@ function toCSV(rows){
   document.addEventListener('keydown', (e)=>{ if ((e.ctrlKey||e.metaKey) && e.key==='Enter') runEval(); });
 
   // filter, toggles, sorting
-  qs('#filter').addEventListener('input', ()=> renderTable(sel.value));
-  qs('#only_misses').addEventListener('change', ()=> renderTable(sel.value));
+  qs('#filter').addEventListener('input', ()=> renderTable(sel.value, ver.value||''));
+  qs('#only_misses').addEventListener('change', ()=> renderTable(sel.value, ver.value||''));
   qsa('th.th').forEach(th=>{
     th.addEventListener('click', ()=>{
       const key = th.dataset.key;
       if (!key) return;
       SORT = { key, dir: (SORT.key===key && SORT.dir==='asc') ? 'desc' : 'asc' };
-      renderTable(sel.value);
+      renderTable(sel.value, ver.value||'');
     });
   });
 
@@ -408,8 +475,8 @@ function toCSV(rows){
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   });
 
-  // autoload (if deep-link is used) — still need user to choose a file to actually run
-  if (autoload && sel.value){ /* noop: cannot autoload file */ }
+  // autoload: cannot auto-run without file (browser limitation)
+  if (autoload && sel.value){ /* noop */ }
 })();
 </script>
 {% endblock %}

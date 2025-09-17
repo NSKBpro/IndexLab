@@ -29,8 +29,15 @@
     <form id="search-form" class="grid sm:grid-cols-2 gap-4 items-end">
       <div>
         <label class="text-sm font-medium">Index</label>
-        <input id="search-index" name="index_name" placeholder="index name" required
-               class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"/>
+        <select id="search-index" name="index_name" required data-indexlab="index"
+                class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+      </div>
+      <div>
+        <label class="text-sm font-medium">Version (optional)</label>
+        <select id="search-version" name="version"
+                class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+          <option value="">(latest)</option>
+        </select>
       </div>
       <div class="sm:col-span-2">
         <label class="text-sm font-medium">Query</label>
@@ -70,22 +77,36 @@
     <form id="cmp-form" class="grid sm:grid-cols-2 gap-4 items-end">
       <div>
         <label class="text-sm font-medium">Left index</label>
-        <input name="left_index" placeholder="left index" required
-               class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"/>
+        <select name="left_index" id="cmp-left-index" required data-indexlab="index"
+                class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
       </div>
       <div>
         <label class="text-sm font-medium">Right index</label>
-        <input name="right_index" placeholder="right index" required
-               class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"/>
+        <select name="right_index" id="cmp-right-index" required data-indexlab="index"
+                class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+      </div>
+      <div>
+        <label class="text-sm font-medium">Left version (optional)</label>
+        <select name="left_version" id="cmp-left-version"
+                class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+          <option value="">(latest)</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-sm font-medium">Right version (optional)</label>
+        <select name="right_version" id="cmp-right-version"
+                class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+          <option value="">(latest)</option>
+        </select>
       </div>
       <div class="sm:col-span-2">
         <label class="text-sm font-medium">Query</label>
-        <input name="query" placeholder="e.g., verify bgp session" required
+        <input name="query" id="cmp-query" placeholder="e.g., verify bgp session" required
                class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"/>
       </div>
       <div>
         <label class="text-sm">k</label>
-        <input type="number" name="k" value="5" min="1"
+        <input type="number" name="k" id="cmp-k" value="5" min="1"
                class="mt-1 w-24 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"/>
       </div>
       <button type="submit"
@@ -127,6 +148,64 @@
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden rounded-xl bg-slate-900 text-white px-4 py-2 shadow-lg"></div>
 
 <script>
+/* ========================= Canonical index/version helper ========================= */
+window.IndexLab = window.IndexLab || {};
+IndexLab._cache = { idx: null, idx_exp: 0, ver: new Map() };
+
+IndexLab.fetchIndexes = async function(force=false){
+  const now = Date.now();
+  if (!force && IndexLab._cache.idx && IndexLab._cache.idx_exp > now) return IndexLab._cache.idx;
+  const r = await fetch('/api/indexes'); const j = await r.json();
+  const arr = Array.isArray(j.indexes) ? j.indexes : [];
+  IndexLab._cache.idx = arr; IndexLab._cache.idx_exp = now + 30_000;
+  return arr;
+};
+
+IndexLab.populateIndexSelect = async function(selectEl, {value=null, includePlaceholder=true}={}){
+  const sel = (typeof selectEl === 'string') ? document.querySelector(selectEl) : selectEl;
+  if (!sel) return;
+  const items = await IndexLab.fetchIndexes();
+  sel.innerHTML = '';
+  if (includePlaceholder) {
+    const opt = document.createElement('option'); opt.value=''; opt.textContent='(choose index)'; sel.appendChild(opt);
+  }
+  for (const it of items){
+    const o = document.createElement('option');
+    o.value = it.index_name;
+    o.textContent = it.index_name + (it.latest_version ? ` · v${it.latest_version}` : '');
+    sel.appendChild(o);
+  }
+  if (value && [...sel.options].some(o=>o.value===value)) sel.value = value;
+  return sel.value;
+};
+
+IndexLab.fetchVersions = async function(indexName){
+  if (!indexName) return [];
+  if (IndexLab._cache.ver.has(indexName)) return IndexLab._cache.ver.get(indexName);
+  const r = await fetch(`/api/versioning/${encodeURIComponent(indexName)}`);
+  const j = await r.json();
+  const arr = Array.isArray(j.versions) ? j.versions : [];
+  IndexLab._cache.ver.set(indexName, arr);
+  return arr;
+};
+
+IndexLab.populateVersionSelect = async function(selectEl, indexName, {value=null}={}){
+  const sel = (typeof selectEl === 'string') ? document.querySelector(selectEl) : selectEl;
+  if (!sel) return;
+  const versions = await IndexLab.fetchVersions(indexName);
+  const current = sel.value;
+  sel.innerHTML = '<option value="">(latest)</option>';
+  for (const v of versions){
+    const o = document.createElement('option');
+    o.value = v.version;
+    const when = v.created_at ? ` — ${new Date(v.created_at).toISOString().replace('T',' ').slice(0,16)}Z` : '';
+    o.textContent = `v${v.version}${when}`;
+    sel.appendChild(o);
+  }
+  const desired = value || current;
+  if (desired && [...sel.options].some(o=>o.value===desired)) sel.value = desired;
+};
+
 /* ========================= Tabs ========================= */
 (function(){
   const key='indexlab_active_tab';
@@ -176,7 +255,7 @@ function formatSource(hit){
   if (src.url || src.origin_url){ const u=src.url||src.origin_url; const label=src.title||u; titleHtml=`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" class="font-medium underline">${esc(label)}</a>`; }
   else if (src.path || src.origin_path){ const p=src.path||src.origin_path; titleHtml=`<span class="font-medium">${esc(src.title||p)}</span>`; }
   else if (src.title){ titleHtml=`<span class="font-medium">${esc(src.title)}</span>`; }
-  else { titleHtml=`<span class="font-medium">${esc(hit.id)}</span>`; }
+  else { titleHtml=`<span class="font-medium">${esc(hit.id||'')}</span>`; }
   return `<div class="mt-1 text-[11px] text-slate-500">${titleHtml}${meta}</div>`;
 }
 
@@ -186,8 +265,13 @@ async function openChunk(indexName, docId){
   title.textContent=`index: ${indexName} • id: ${docId}`; body.textContent='Loading…';
   modal.classList.remove('hidden'); modal.classList.add('flex');
   try{
+    // prefer search tab’s version; if empty, try compare tab’s depending on which index matches
+    const ver = qs('#search-index')?.value===indexName ? (qs('#search-version')?.value||'')
+              : (qs('#cmp-left-index')?.value===indexName ? (qs('#cmp-left-version')?.value||'')
+              :  (qs('#cmp-right-index')?.value===indexName ? (qs('#cmp-right-version')?.value||'') : ''));
     const q=qs('#search-query')?.value||'';
-    const res=await fetch(`/api/chunk?index_name=${encodeURIComponent(indexName)}&doc_id=${encodeURIComponent(docId)}&q=${encodeURIComponent(q)}`);
+    const url = `/api/chunk?index_name=${encodeURIComponent(indexName)}&doc_id=${encodeURIComponent(docId)}&q=${encodeURIComponent(q)}${ver?`&version=${encodeURIComponent(ver)}`:''}`;
+    const res=await fetch(url);
     const txt=await res.text(); if(!res.ok){ body.textContent=`Error ${res.status}: ${txt}`; return; }
     const data=JSON.parse(txt);
     body.innerHTML = applySpansToText(data.text||'', data.highlights||{});
@@ -202,6 +286,36 @@ async function openChunk(indexName, docId){
   qs('#chunk-copy').addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(qs('#chunk-body').textContent||''); toast('Copied'); }catch{ toast('Copy failed'); } });
 })();
 
+/* ========================= Populate index + version selects ========================= */
+(async function hydrateSelectors(){
+  // Index selects
+  await IndexLab.populateIndexSelect('#search-index');
+  await IndexLab.populateIndexSelect('#cmp-left-index');
+  await IndexLab.populateIndexSelect('#cmp-right-index');
+
+  // When index changes, load versions for that index
+  async function wireVersion(indexSel, verSel, paramKey){
+    const idxEl = qs(indexSel), verEl = qs(verSel);
+    if (!idxEl || !verEl) return;
+    const setFromUrl = () => {
+      const p = new URLSearchParams(location.search);
+      const want = p.get(paramKey || '');
+      if (want) verEl.value = want;
+    };
+    idxEl.addEventListener('change', async ()=>{
+      await IndexLab.populateVersionSelect(verEl, idxEl.value);
+      setFromUrl();
+    });
+    // initial fill
+    await IndexLab.populateVersionSelect(verEl, idxEl.value);
+    setFromUrl();
+  }
+
+  await wireVersion('#search-index', '#search-version', 'sver');
+  await wireVersion('#cmp-left-index', '#cmp-left-version', 'lver');
+  await wireVersion('#cmp-right-index', '#cmp-right-version', 'rver');
+})();
+
 /* ========================= Search ========================= */
 (() => {
   const statusEl=qs('#search-status'), metaEl=qs('#search-meta'), listEl=qs('#search-results');
@@ -214,6 +328,7 @@ async function openChunk(indexName, docId){
     const q  = document.getElementById('search-query'); if (q && s.query!=null) q.value = s.query;
     const k  = document.querySelector('#search-form [name="k"]'); if (k && s.k!=null) k.value = s.k;
     const h  = document.querySelector('#search-form [name="hybrid"]'); if (h) h.checked = !!s.hybrid;
+    const v  = document.getElementById('search-version'); if (v && s.version!=null) v.value = s.version;
   })();
 
   function skel(n=5){ return Array.from({length:n}).map(()=>'<div class="animate-pulse h-20 rounded-xl bg-slate-200/60 dark:bg-slate-700/40"></div>').join(''); }
@@ -237,7 +352,15 @@ async function openChunk(indexName, docId){
   }
 
   function updateSearchUrl(body){
-    const p = new URLSearchParams({ tab:'search', index:body.index_name||'', q:body.query||'', k:String(body.k||5), hybrid: body.hybrid?'1':'0', autosearch:'1' });
+    const p = new URLSearchParams({
+      tab:'search',
+      index: body.index_name||'',
+      q: body.query||'',
+      k: String(body.k||5),
+      hybrid: body.hybrid?'1':'0',
+      autosearch:'1',
+      sver: body.version||''
+    });
     history.replaceState(null, '', `?${p.toString()}`);
   }
 
@@ -245,7 +368,13 @@ async function openChunk(indexName, docId){
     e.preventDefault(); statusEl.textContent='Searching…'; listEl.innerHTML=skel(); metaEl.textContent='';
     try{
       const fd=new FormData(e.target);
-      const body={ index_name: fd.get('index_name'), query: fd.get('query'), k: Number(fd.get('k')||5), hybrid: !!fd.get('hybrid') };
+      const body={
+        index_name: fd.get('index_name'),
+        version: (fd.get('version')||'') || undefined,
+        query: fd.get('query'),
+        k: Number(fd.get('k')||5),
+        hybrid: !!fd.get('hybrid')
+      };
       saveJSON('indexlab_search', body);
       updateSearchUrl(body);
 
@@ -267,10 +396,12 @@ async function openChunk(indexName, docId){
   (function persistInit(){
     const c = loadJSON('indexlab_compare', null);
     if (!c) return;
-    const L = document.querySelector('#cmp-form [name="left_index"]');  if (L && c.left_index!=null)  L.value  = c.left_index;
-    const R = document.querySelector('#cmp-form [name="right_index"]'); if (R && c.right_index!=null) R.value  = c.right_index;
-    const Q = document.querySelector('#cmp-form [name="query"]');       if (Q && c.query!=null)       Q.value  = c.query;
-    const K = document.querySelector('#cmp-form [name="k"]');           if (K && c.k!=null)           K.value  = c.k;
+    const L = qs('#cmp-left-index');  if (L && c.left_index!=null)  L.value  = c.left_index;
+    const R = qs('#cmp-right-index'); if (R && c.right_index!=null) R.value  = c.right_index;
+    const Q = qs('#cmp-query');       if (Q && c.query!=null)       Q.value  = c.query;
+    const K = qs('#cmp-k');           if (K && c.k!=null)           K.value  = c.k;
+    const LV= qs('#cmp-left-version'); if (LV && c.left_version!=null) LV.value = c.left_version;
+    const RV= qs('#cmp-right-version'); if (RV && c.right_version!=null) RV.value = c.right_version;
   })();
 
   const skel=()=>Array.from({length:4}).map(()=>'<div class="animate-pulse h-20 rounded-xl bg-slate-200/60 dark:bg-slate-700/40"></div>').join('');
@@ -292,7 +423,16 @@ async function openChunk(indexName, docId){
   }
 
   function updateCompareUrl(body){
-    const p = new URLSearchParams({ tab:'compare', left:body.left_index||'', right:body.right_index||'', q:body.query||'', k:String(body.k||5), autorun:'1' });
+    const p = new URLSearchParams({
+      tab:'compare',
+      left: body.left_index||'',
+      right: body.right_index||'',
+      q: body.query||'',
+      k: String(body.k||5),
+      autorun:'1',
+      lver: body.left_version||'',
+      rver: body.right_version||''
+    });
     history.replaceState(null, '', `?${p.toString()}`);
   }
 
@@ -301,7 +441,14 @@ async function openChunk(indexName, docId){
     leftEl.innerHTML=skel(); rightEl.innerHTML=skel(); overlapEl.textContent=''; overviewEl.textContent='';
     try{
       const fd=new FormData(e.target);
-      const body={ left_index: fd.get('left_index'), right_index: fd.get('right_index'), query: fd.get('query'), k: Number(fd.get('k')||5) };
+      const body={
+        left_index:  fd.get('left_index'),
+        right_index: fd.get('right_index'),
+        left_version: (fd.get('left_version')||'') || undefined,
+        right_version:(fd.get('right_version')||'') || undefined,
+        query: fd.get('query'),
+        k: Number(fd.get('k')||5)
+      };
       saveJSON('indexlab_compare', body);
       updateCompareUrl(body);
 
@@ -323,26 +470,28 @@ async function openChunk(indexName, docId){
 })();
 
 /* ========================= Deep link + hotkeys ========================= */
-// Deep-link on load
 (function deepLinkInit(){
   const params = new URLSearchParams(location.search);
   const tab = params.get('tab');
   if (tab === 'compare' || tab === 'search') window.__activateTab(tab);
 
   if (tab === 'search') {
-    const ix = params.get('index'); const q = params.get('q'); const k = params.get('k'); const h = params.get('hybrid') === '1';
+    const ix = params.get('index'); const q = params.get('q'); const k = params.get('k'); const h = params.get('hybrid') === '1'; const v = params.get('sver');
     if (ix) document.getElementById('search-index').value = ix;
     if (q)  document.getElementById('search-query').value = q;
     if (k)  document.querySelector('#search-form [name="k"]').value = k;
     document.querySelector('#search-form [name="hybrid"]').checked = h;
+    if (v) document.getElementById('search-version').value = v;
     if (params.get('autosearch') === '1') document.getElementById('search-form').requestSubmit();
   }
   if (tab === 'compare') {
-    const L = params.get('left'), R = params.get('right'), q = params.get('q'), k = params.get('k');
-    if (L) document.querySelector('#cmp-form [name="left_index"]').value = L;
-    if (R) document.querySelector('#cmp-form [name="right_index"]').value = R;
-    if (q) document.querySelector('#cmp-form [name="query"]').value = q;
-    if (k) document.querySelector('#cmp-form [name="k"]').value = k;
+    const L = params.get('left'), R = params.get('right'), q = params.get('q'), k = params.get('k'), lver=params.get('lver'), rver=params.get('rver');
+    if (L) qs('#cmp-left-index').value = L;
+    if (R) qs('#cmp-right-index').value = R;
+    if (q) qs('#cmp-query').value = q;
+    if (k) qs('#cmp-k').value = k;
+    if (lver) qs('#cmp-left-version').value = lver;
+    if (rver) qs('#cmp-right-version').value = rver;
     if (params.get('autorun') === '1') document.getElementById('cmp-form').requestSubmit();
   }
 })();

@@ -7,6 +7,9 @@ from .models.db import init_db
 from .api import eval_api as eval_api, files, answerless_search as search, health, sse, config, analytics
 from .api import sources as sources_api
 from .api import chunk_preview as chunk_preview_api
+# main.py
+from .api import indexes as indexes_api
+from .api import versions as versions_api
 
 
 setup_logging()
@@ -23,7 +26,8 @@ app.include_router(eval_api.router, prefix="/api")
 app.include_router(analytics.router,prefix="/api")
 app.include_router(sources_api.router, prefix="/api")
 app.include_router(chunk_preview_api.router, prefix="/api")
-
+app.include_router(indexes_api.router, prefix="/api")
+app.include_router(versions_api.router, prefix="/api")
 
 templates = Jinja2Templates(directory="app/ui/templates")
 app.mount("/static", StaticFiles(directory="app/ui/templates"), name="static")

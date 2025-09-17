@@ -11,6 +11,7 @@ from ..core.config import settings
 from ..ingest.indexer import load_index, search
 from ..ingest.embedder import embed_texts
 from sklearn.metrics import ndcg_score
+import numpy as np
 
 router = APIRouter()
 
@@ -20,6 +21,8 @@ router = APIRouter()
 
 def _load_gold(upload: UploadFile) -> pd.DataFrame:
     """Load CSV/XLSX/JSON with columns: question, expected_id (case-insensitive)."""
+    if upload is None:
+        raise HTTPException(400, "Missing dataset file")
     name = (upload.filename or "").lower()
     data = upload.file.read()  # bytes
 
@@ -45,17 +48,26 @@ def _load_gold(upload: UploadFile) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def _resolve_index_path(index_name: str) -> Path:
+def _resolve_index_path(index_name: str, version: Optional[str] = None) -> Path:
     """
-    Resolve an index name to a .faiss path. Accepts either a bare name or a full path.
-      - "nimbus_v1"           -> {settings.indexes_dir}/nimbus_v1.faiss
-      - "nimbus_v1.faiss"     -> {settings.indexes_dir}/nimbus_v1.faiss
-      - "/abs/dir/x.faiss"    -> used as-is
+    Resolve an index name (and optional version) to a .faiss path.
+
+      - version=None:
+          <indexes_dir>/<name>.faiss
+      - version="YYYYMMDD-HHMMSS":
+          <indexes_dir>/<name>/versions/<version>/<name>.faiss
+
+      If index_name is an absolute path to a .faiss file, use as-is.
     """
     p = Path(index_name)
-    if p.is_absolute():
+    if p.is_absolute() and p.suffix == ".faiss":
         return p
+
     base = Path(settings.indexes_dir)
+    if version:
+        vp = base / index_name / "versions" / version / f"{index_name}.faiss"
+        return vp
+
     return base / (p.name if p.suffix == ".faiss" else f"{p.name}.faiss")
 
 
@@ -68,14 +80,15 @@ def _safe_read_json(path: Path) -> Optional[Any]:
     return None
 
 
-def _open_index(index_name: str):
+def _open_index(index_name: str, version: Optional[str] = None):
     """
-    Open index and normalize return shapes into:
+    Open index (optionally a specific version) and normalize return shapes into:
       backend, ids(list[str]), manifest(dict), docs(any or None)
     """
-    p = _resolve_index_path(index_name)
+    p = _resolve_index_path(index_name, version)
     if not p.exists():
-        raise HTTPException(404, f"index not found: {index_name}")
+        where = f"{index_name}@{version}" if version else index_name
+        raise HTTPException(404, f"index not found: {where}")
 
     # Try loader with Path, name, string path (be tolerant)
     tried = []
@@ -100,17 +113,14 @@ def _open_index(index_name: str):
     # Normalize common shapes
     if isinstance(res, tuple):
         if len(res) == 3 and isinstance(res[1], (list, tuple)):
-            # (backend, ids, manifest)
             backend, ids_raw, manifest = res
             ids = [str(x) for x in ids_raw]
             manifest = dict(manifest or {})
         elif len(res) >= 4:
-            # (backend, manifest, ids, docs)
             backend, manifest, ids_raw, docs = res[0], res[1], res[2], res[3]
             ids = [str(x) for x in ids_raw]
             manifest = dict(manifest or {})
         else:
-            # Fallback guess
             b, a, c = (res + (None, None, None))[:3]
             if b is not None: backend = b
             if isinstance(a, (list, tuple)): ids = [str(x) for x in a]
@@ -133,11 +143,12 @@ def _open_index(index_name: str):
         manifest = dict(getattr(res, "manifest", {}) or getattr(res, "meta", {}) or {})
         docs = getattr(res, "docs", None)
 
-    # Fill from disk if needed
+    # Fill from disk if needed (version-aware)
     if not manifest:
-        mf = _safe_read_json(p.with_suffix(".manifest.json"))
-        if isinstance(mf, dict):
-            manifest = mf
+        mf = p.with_suffix(".manifest.json")
+        mfd = _safe_read_json(mf)
+        if isinstance(mfd, dict):
+            manifest = mfd
     if docs is None:
         docs = _safe_read_json(p.with_suffix(".docs.json"))
 
@@ -145,9 +156,6 @@ def _open_index(index_name: str):
         raise HTTPException(500, detail="load_index(...) did not provide backend + ids.\n" + "\n".join(tried))
 
     return backend, ids, manifest, docs
-
-
-import numpy as np
 
 
 def _embed_one(question: str, manifest: Dict[str, Any]):
@@ -159,8 +167,6 @@ def _embed_one(question: str, manifest: Dict[str, Any]):
     except TypeError:
         vecs = embed_texts([question])
 
-    # --- CORRECTED CHECK ---
-    # Verify the result is a NumPy array and that it is not empty.
     if not isinstance(vecs, np.ndarray) or vecs.size == 0:
         raise HTTPException(500, "embed_texts returned no vectors or an invalid type")
 
@@ -202,8 +208,8 @@ def _preview_from_docs(docs: Any, doc_id: str, limit: int = 180) -> str:
     return ""
 
 
-def _eval_once(index_name: str, df: pd.DataFrame, k: int, include_hits: int = 0):
-    backend, ids, manifest, docs = _open_index(index_name)
+def _eval_once(index_name: str, df: pd.DataFrame, k: int, include_hits: int = 0, version: Optional[str] = None):
+    backend, ids, manifest, docs = _open_index(index_name, version=version)
     ids = [str(x) for x in ids]  # ensure string ids everywhere
 
     hits_total = 0
@@ -216,10 +222,8 @@ def _eval_once(index_name: str, df: pd.DataFrame, k: int, include_hits: int = 0)
         exp = str(row["expected_id"])
 
         q_emb = _embed_one(q, manifest)
-        print(q_emb)
         # your search returns [(id, score)] — keep a little cushion max(k, 10)
         res = search(backend, q_emb, max(k, 10), ids)  # -> [(id, score)]
-        print(res)
         id_list = [str(i) for (i, _) in res][:k]
         score_list = [float(s) for (_, s) in res][:k]
 
@@ -237,15 +241,12 @@ def _eval_once(index_name: str, df: pd.DataFrame, k: int, include_hits: int = 0)
 
         # Optional top hits preview
         hits_view = []
-        print(include_hits)
         if include_hits and include_hits > 0:
             show = min(include_hits, len(id_list))
-            print(show)
             for j in range(show):
                 _id = id_list[j]
                 _score = score_list[j]
                 preview = _preview_from_docs(docs, _id, 180) if docs is not None else ""
-                print(preview)
                 hits_view.append({"id": _id, "score": _score, "preview": preview})
 
         results.append({
@@ -280,12 +281,14 @@ async def eval_api(
     file: UploadFile = File(...),
     return_details: bool = Form(False),
     include_hits: int = Form(0),
+    index_version: Optional[str] = Form(None),
 ):
     """
-    Evaluate a single index. Upload CSV/XLSX/JSON with columns: question, expected_id.
+    Evaluate a single index (optionally a specific version).
+    Upload CSV/XLSX/JSON with columns: question, expected_id.
     """
     df = _load_gold(file)
-    out = _eval_once(index_name, df, k, include_hits if return_details else 0)
+    out = _eval_once(index_name, df, k, include_hits if return_details else 0, version=index_version)
     if not return_details:
         out.pop("results", None)
     return out
@@ -296,15 +299,43 @@ async def eval_compare_api(
     left_index: str = Form(...),
     right_index: str = Form(...),
     k: int = Form(5),
-    file: UploadFile = File(...),
+
+    # Accept EITHER a single "file" or separate sides
+    file: Optional[UploadFile] = File(default=None),
+    file_left: Optional[UploadFile] = File(default=None),
+    file_right: Optional[UploadFile] = File(default=None),
+
+    # Optional extra fields (currently unused in core logic, but accepted)
     include_hits: int = Form(0),
+    left_version: Optional[str] = Form(None),
+    right_version: Optional[str] = Form(None),
+    left_hybrid: Optional[str] = Form(None),
+    right_hybrid: Optional[str] = Form(None),
 ):
     """
-    Compare two indexes using the same gold set; returns per-question deltas.
+    Compare two indexes using the same gold set or separate gold sets.
+    Frontend may send:
+      - file                        (use for both)
+      - file_left [and optionally file_right]
+    Versions can be passed via left_version / right_version.
     """
-    df = _load_gold(file)
-    left = _eval_once(left_index, df, k, include_hits)
-    right = _eval_once(right_index, df, k, include_hits)
+    # Normalize files
+    f_left = file_left or file
+    f_right = file_right or f_left or file
+    if f_left is None:
+        raise HTTPException(400, "Field required: file or file_left")
+
+    df_left = _load_gold(f_left)
+    df_right = _load_gold(f_right) if (f_right is not None) else df_left
+
+    # For now we assume the same row order; if lengths differ, we trim to min length
+    if len(df_left) != len(df_right):
+        min_len = min(len(df_left), len(df_right))
+        df_left = df_left.iloc[:min_len].reset_index(drop=True)
+        df_right = df_right.iloc[:min_len].reset_index(drop=True)
+
+    left = _eval_once(left_index, df_left, k, include_hits, version=left_version)
+    right = _eval_once(right_index, df_right, k, include_hits, version=right_version)
 
     combined: List[Dict[str, Any]] = []
     for a, b in zip(left.get("results", []), right.get("results", [])):
@@ -338,7 +369,7 @@ async def eval_compare_api(
         "right": {kk: vv for kk, vv in right.items() if kk != "results"},
         "regressions_count": sum(1 for r in combined if r["delta"] is not None and r["delta"] > 0),
         "improvements_count": sum(1 for r in combined if r["delta"] is not None and r["delta"] < 0),
-        "changed_count": sum(1 for r in combined if (r["delta"] in (999, -999)) or (r["delta"] not in (None, 0))),
+        "changed_count": sum(1 for r in combined if (r["delta"] in (999, -999)) or (r["delta"] not in (None, 0)) ),
         "results": combined,
     }
     return summary

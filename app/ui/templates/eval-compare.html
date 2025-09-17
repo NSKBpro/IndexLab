@@ -6,10 +6,16 @@
   <div class="grid lg:grid-cols-2 gap-6">
     <!-- Controls -->
     <div class="space-y-4">
-      <div class="grid sm:grid-cols-2 gap-4">
-        <div>
+      <div class="grid sm:grid-cols-4 gap-4">
+        <div class="sm:col-span-2">
           <label class="text-sm font-medium">Index A (baseline)</label>
           <select id="index-a" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+        </div>
+        <div class="">
+          <label class="text-sm font-medium">Version A</label>
+          <select id="version-a" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+            <option value="">(latest)</option>
+          </select>
         </div>
         <div>
           <label class="text-sm font-medium">Hybrid A</label>
@@ -19,9 +25,16 @@
             <option value="false">Off</option>
           </select>
         </div>
-        <div>
+
+        <div class="sm:col-span-2">
           <label class="text-sm font-medium">Index B (candidate)</label>
           <select id="index-b" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+        </div>
+        <div>
+          <label class="text-sm font-medium">Version B</label>
+          <select id="version-b" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+            <option value="">(latest)</option>
+          </select>
         </div>
         <div>
           <label class="text-sm font-medium">Hybrid B</label>
@@ -39,7 +52,7 @@
           <input id="k" type="number" min="1" max="100" value="10" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
         </div>
         <div>
-          <label class="text-sm font-medium">Mode</label>
+          <label class="text-sm font-medium">CSV mode</label>
           <select id="mode" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
             <option value="same">Same CSV for both</option>
             <option value="different">Separate CSVs</option>
@@ -54,11 +67,11 @@
       <div id="csv-inputs" class="grid sm:grid-cols-2 gap-4">
         <div>
           <label class="text-sm font-medium">CSV (question,expected_id)</label>
-          <input id="csv-a" type="file" accept=".csv" class="mt-1 w-full text-sm">
+          <input id="csv-a" type="file" accept=".csv,.json,.xlsx" class="mt-1 w-full text-sm">
         </div>
         <div id="csv-b-wrap" class="hidden">
           <label class="text-sm font-medium">CSV B (question,expected_id)</label>
-          <input id="csv-b" type="file" accept=".csv" class="mt-1 w-full text-sm">
+          <input id="csv-b" type="file" accept=".csv,.json,.xlsx" class="mt-1 w-full text-sm">
         </div>
       </div>
 
@@ -102,7 +115,7 @@
           <th data-key="right_rank" class="th text-left px-3 py-2 cursor-pointer">Rank B</th>
           <th data-key="right_score" class="th text-left px-3 py-2 cursor-pointer">Score B</th>
           <th data-key="delta" class="th text-left px-3 py-2 cursor-pointer">Δ Rank (B−A)</th>
-          <th data-key="status" class="th text-left px-3 py-2">Status</th>
+          <th class="th text-left px-3 py-2">Status</th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -114,7 +127,59 @@
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden rounded-xl bg-slate-900 text-white px-4 py-2 shadow-lg"></div>
 
 <script>
-// ---------------- utils ----------------
+// ===== Global error toast =====
+window.addEventListener('error', (e) => {
+  const t=document.getElementById('toast'); if(t){t.textContent='JS error: '+(e?.message||e); t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),3000);}
+  console.error(e);
+});
+
+// ===== Index/version helpers =====
+const IndexLab = {
+  _cache: { idx:null, exp:0, ver:new Map() },
+
+  async fetchIndexes(force=false){
+    const now=Date.now();
+    if(!force && this._cache.idx && this._cache.exp>now) return this._cache.idx;
+    const r=await fetch('/api/indexes'); const j=await r.json();
+    const arr = Array.isArray(j.indexes) ? j.indexes : [];
+    this._cache.idx = arr; this._cache.exp = now + 30000;
+    return arr;
+  },
+
+  async populateIndexSelect(selectEl, {value=null}={}){
+    const sel = (typeof selectEl==='string') ? document.querySelector(selectEl) : selectEl;
+    if(!sel) return;
+    const items = await this.fetchIndexes();
+    sel.innerHTML = items.map(it=>`<option value="${esc(it.index_name)}">${esc(it.index_name)}</option>`).join('') || '<option disabled>(no indexes)</option>';
+    if(value && [...sel.options].some(o=>o.value===value)) sel.value=value;
+    return sel.value;
+  },
+
+  async fetchVersions(indexName){
+    if(!indexName) return [];
+    if(this._cache.ver.has(indexName)) return this._cache.ver.get(indexName);
+    const r = await fetch(`/api/versioning/${encodeURIComponent(indexName)}`);
+    const j = await r.json();
+    const versions = Array.isArray(j.versions) ? j.versions : [];
+    this._cache.ver.set(indexName, versions);
+    return versions;
+  },
+
+  async populateVersionSelect(selectEl, indexName, {value=null}={}){
+    const sel = (typeof selectEl==='string') ? document.querySelector(selectEl) : selectEl;
+    if(!sel) return;
+    const versions = await this.fetchVersions(indexName);
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">(latest)</option>' + versions.map(v=>{
+      const when = v.created_at ? ` — ${new Date(v.created_at).toISOString().replace('T',' ').slice(0,16)}Z` : '';
+      return `<option value="${esc(v.version)}">v${esc(v.version)}${when}</option>`;
+    }).join('');
+    const desired = value || prev;
+    if(desired && [...sel.options].some(o=>o.value===desired)) sel.value=desired;
+  }
+};
+
+// ===== utils =====
 const qs=(s,el=document)=>el.querySelector(s);
 const qsa=(s,el=document)=>[...el.querySelectorAll(s)];
 const esc=(s)=> (s??'').toString().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -122,41 +187,13 @@ function toast(msg){ const t=qs('#toast'); t.textContent=msg; t.classList.remove
 const fmtPct=(x)=> (x==null ? '—' : (x*100).toFixed(1)+'%');
 const fmtNum=(x, d=3)=> (x==null ? '—' : Number(x).toFixed(d));
 
-// robust index normalization (accept multiple shapes)
-function normalizeIndexes(x){
-  if (!x) return [];
-  let arr=[];
-  if (Array.isArray(x)) arr=x;
-  else if (Array.isArray(x.indexes)) arr=x.indexes;
-  else if (Array.isArray(x.data)) arr=x.data;
-  else if (x.items && Array.isArray(x.items)) arr=x.items;
-  else if (x.indexes && typeof x.indexes==='object') arr=Object.values(x.indexes);
-  return arr.map(it=>{
-    if (typeof it==='string') return it;
-    if (it && typeof it==='object'){
-      return it.index_name || it.name || it.id || it.index || it.title || it.slug;
-    }
-    return null;
-  }).filter(Boolean);
-}
-
-// ---------------- fetchers ----------------
-async function fetchIndexes(){
-  const r = await fetch('/api/indexes');
-  const data = await r.json();
-  return normalizeIndexes(data);
-}
-
-// ---------------- state ----------------
+// ===== state =====
 let RAW_ROWS = [];   // data.results
-let VIEW = [];       // filtered + sorted view
+let VIEW = [];       // filtered + sorted
 let SORT = { key: 'delta', dir: 'asc' };
 
-// ---------------- helpers ----------------
+// ===== helpers =====
 function scoreFrom(row, side){
-  // Try flexible shapes:
-  // 1) row.left_score / row.right_score
-  // 2) row.left_scores[] at rank-1
   const rankKey = side+'_rank', scoreKey = side+'_score', scoresKey = side+'_scores';
   const r = row[rankKey];
   if (typeof row[scoreKey] === 'number') return row[scoreKey];
@@ -166,9 +203,18 @@ function scoreFrom(row, side){
   }
   return null;
 }
+function deriveDelta(row){
+  if (typeof row.delta === 'number') return row.delta;
+  const a = row.left_rank, b = row.right_rank;
+  const va = (a!=null && a>0) ? a : Infinity;
+  const vb = (b!=null && b>0) ? b : Infinity;
+  const d = vb - va;
+  return Number.isFinite(d) ? d : null;
+}
 function statusOf(r){
-  if (r.delta == null || r.delta === 0) return 'unchanged';
-  return r.delta < 0 ? 'improvement' : 'regression';
+  const d = deriveDelta(r);
+  if (d == null || d === 0) return 'unchanged';
+  return d < 0 ? 'improvement' : 'regression';
 }
 function rowClass(r){
   const s = statusOf(r);
@@ -192,7 +238,7 @@ function card(label, value, sub=''){
   </div>`;
 }
 
-// ---------------- render ----------------
+// ===== render =====
 function renderCards(payload, aName, bName){
   const A = payload.left || {};
   const B = payload.right || {};
@@ -212,7 +258,7 @@ function renderCards(payload, aName, bName){
   qs('#delta').innerHTML = [
     card('Δ Recall (B−A)', dRecall==null?'—':((dRecall*100).toFixed(1)+' pp')),
     card('Δ MRR (B−A)', dMRR==null?'—':(dMRR>=0?'+':'')+dMRR.toFixed(3)),
-    card('Changed', esc(payload.changed_count ?? (RAW_ROWS.filter(r=>r.delta!=null && r.delta!==0).length)))
+    card('Changed', esc(payload.changed_count ?? (RAW_ROWS.filter(r=>{const d=deriveDelta(r); return d!=null && d!==0;}).length)))
   ].join('');
 }
 
@@ -222,7 +268,7 @@ function applyFilters(){
   const onlyRegr = qs('#only_regr').checked;
   const q = (qs('#filter').value||'').toLowerCase().trim();
 
-  VIEW = RAW_ROWS.filter(r=>{
+  VIEW = RAW_ROWS.map(r => ({...r, delta: deriveDelta(r)})).filter(r=>{
     const s = statusOf(r);
     if (onlyChanged && s==='unchanged') return false;
     if (onlyImpr && s!=='improvement') return false;
@@ -239,6 +285,7 @@ function applyFilters(){
     const getVal=(row)=>{
       if (key==='left_score')  return scoreFrom(row,'left') ?? -Infinity;
       if (key==='right_score') return scoreFrom(row,'right') ?? -Infinity;
+      if (key==='delta')       return row.delta ?? 0;
       return row[key];
     };
     const av=getVal(a), bv=getVal(b);
@@ -256,7 +303,6 @@ function applyFilters(){
 
 function renderTable(){
   applyFilters();
-  const aName = qs('#index-a').value, bName = qs('#index-b').value;
   const tbody = qs('#tbody');
   if (!VIEW.length){
     tbody.innerHTML = `<tr><td class="px-3 py-6 text-slate-500" colspan="8">No rows.</td></tr>`;
@@ -264,6 +310,7 @@ function renderTable(){
   }
   tbody.innerHTML = VIEW.map(r=>{
     const ls = scoreFrom(r,'left');  const rs = scoreFrom(r,'right');
+    const d = r.delta;
     const s = statusOf(r);
     const sBadge =
       s==='improvement' ? `<span class="text-emerald-800 bg-emerald-100 rounded px-2 py-0.5 text-[11px]">improvement</span>` :
@@ -277,13 +324,13 @@ function renderTable(){
         <td class="px-3 py-2 align-top">${ls==null?'—':ls.toFixed(4)}</td>
         <td class="px-3 py-2 align-top">${r.right_rank ?? '—'}</td>
         <td class="px-3 py-2 align-top">${rs==null?'—':rs.toFixed(4)}</td>
-        <td class="px-3 py-2 align-top">${signed(r.delta)} <span class="ml-1 text-xs text-slate-500">${arrow(r.delta)}</span></td>
+        <td class="px-3 py-2 align-top">${signed(d)} <span class="ml-1 text-xs text-slate-500">${arrow(d)}</span></td>
         <td class="px-3 py-2 align-top">${sBadge}</td>
       </tr>`;
   }).join('');
 }
 
-// ---------------- CSV export ----------------
+// ===== CSV export =====
 function toCSV(rows){
   const header = ['question','expected_id','left_rank','left_score','right_rank','right_score','delta','left_found','right_found','status'];
   const lines = rows.map(r=>{
@@ -309,10 +356,12 @@ function toCSV(rows){
   return [header.join(','), ...lines].join('\n');
 }
 
-// ---------------- main ----------------
+// ===== main =====
 (async function init(){
   const aSel = qs('#index-a');
   const bSel = qs('#index-b');
+  const vaSel = qs('#version-a');
+  const vbSel = qs('#version-b');
   const kEl = qs('#k');
   const modeSel = qs('#mode');
   const runBtn = qs('#run');
@@ -320,27 +369,32 @@ function toCSV(rows){
   const status = qs('#status');
   const csvA = qs('#csv-a');
   const csvBWrap = qs('#csv-b-wrap');
+  const csvB = qs('#csv-b');
 
-  // deep link (?a=ixA&b=ixB&k=10&autoload=1)
+  // deep link (?a=ixA&av=verA&b=ixB&bv=verB&k=10&autoload=1)
   const params = new URLSearchParams(location.search);
   const aFrom = params.get('a');
+  const avFrom = params.get('av');
   const bFrom = params.get('b');
+  const bvFrom = params.get('bv');
   const kFrom = params.get('k');
   const autoload = params.get('autoload') === '1';
 
   try {
-    const names = await fetchIndexes();
-    const opts = names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('') || '<option disabled>(no indexes)</option>';
-    aSel.innerHTML = opts; bSel.innerHTML = opts;
-    if (aFrom && names.includes(aFrom)) aSel.value = aFrom;
-    if (bFrom && names.includes(bFrom)) bSel.value = bFrom;
-    else if (names.length>1 && !bFrom) bSel.value = names[1];
+    await IndexLab.populateIndexSelect(aSel, { value: aFrom });
+    await IndexLab.populateIndexSelect(bSel, { value: bFrom });
+    await IndexLab.populateVersionSelect(vaSel, aSel.value, { value: avFrom });
+    await IndexLab.populateVersionSelect(vbSel, bSel.value, { value: bvFrom });
     if (kFrom) kEl.value = kFrom;
   } catch (e) {
-    status.textContent = 'Failed to load indexes: ' + e;
+    status.textContent = 'Failed to load indexes/versions: ' + e;
   }
 
-  // CSV-B visibility (backend typically ignores separate CSV)
+  // keep version lists in sync with index choices
+  aSel.addEventListener('change', ()=> IndexLab.populateVersionSelect(vaSel, aSel.value));
+  bSel.addEventListener('change', ()=> IndexLab.populateVersionSelect(vbSel, bSel.value));
+
+  // CSV-B visibility
   modeSel.addEventListener('change', ()=> {
     const v = modeSel.value;
     csvBWrap.classList.toggle('hidden', v !== 'different');
@@ -348,40 +402,68 @@ function toCSV(rows){
   modeSel.value='same'; csvBWrap.classList.add('hidden');
 
   async function runCompare(){
-    const file = csvA.files?.[0];
-    if (!file) { status.textContent = 'Please choose a CSV file.'; return; }
-    if (!aSel.value || !bSel.value || aSel.value === bSel.value) {
-      status.textContent = 'Pick two different indexes.'; return;
-    }
-    status.textContent = 'Running…';
-    qs('#cards').innerHTML = ''; qs('#delta').innerHTML = ''; qs('#tbody').innerHTML = '';
+  const fileA = csvA.files?.[0];
+  const separate = modeSel.value==='different';
+  const fileB = separate ? (csvB.files?.[0] || null) : fileA;
 
-    // shareable URL
-    history.replaceState(null,'',`?${new URLSearchParams({a:aSel.value,b:bSel.value,k:kEl.value,autoload:'1'}).toString()}`);
+  if (!fileA){ status.textContent = 'Choose CSV for A (and B if separate).'; return; }
+  if (separate && !fileB){ status.textContent = 'Choose CSV for B.'; return; }
 
-    const fd = new FormData();
-    fd.append('left_index', aSel.value);
-    fd.append('right_index', bSel.value);
-    fd.append('k', kEl.value);
-    fd.append('file', file, file.name);
-    // hybrids exist in UI but are commonly ignored by the backend:
-    const ha = qs('#hybrid-a').value, hb = qs('#hybrid-b').value;
-    if (ha==='true' || ha==='false') fd.append('left_hybrid', ha);
-    if (hb==='true' || hb==='false') fd.append('right_hybrid', hb);
-
-    try{
-      const resp = await fetch('/api/eval_compare', { method:'POST', body: fd });
-      if (!resp.ok){ status.textContent='Error: '+await resp.text(); return; }
-      const data = await resp.json();
-
-      RAW_ROWS = Array.isArray(data.results) ? data.results : [];
-      renderCards(data, aSel.value, bSel.value);
-      renderTable();
-      status.textContent = 'OK';
-    }catch(e){
-      status.textContent = 'Error: ' + e.message;
-    }
+  // ✅ new validation: compare (index, version-or-latest) tuples
+  const aKey = `${aSel.value}::${(vaSel.value || '(latest)')}`;
+  const bKey = `${bSel.value}::${(vbSel.value || '(latest)')}`;
+  if (!aSel.value || !bSel.value || aKey === bKey) {
+    status.textContent = 'Pick two different index+version combos (e.g., same index with different versions).';
+    return;
   }
+
+  status.textContent = 'Running…';
+  qs('#cards').innerHTML = ''; qs('#delta').innerHTML = ''; qs('#tbody').innerHTML = '';
+
+  // shareable URL
+  const p = new URLSearchParams({ a:aSel.value, b:bSel.value, k:kEl.value, autoload:'1' });
+  if (vaSel.value) p.set('av', vaSel.value);
+  if (vbSel.value) p.set('bv', vbSel.value);
+  history.replaceState(null,'',`?${p.toString()}`);
+
+  const fd = new FormData();
+  fd.append('left_index', aSel.value);
+  fd.append('right_index', bSel.value);
+  if (vaSel.value) fd.append('left_version', vaSel.value);
+  if (vbSel.value) fd.append('right_version', vbSel.value);
+  fd.append('k', kEl.value);
+  fd.append('file_left', fileA, fileA.name);
+  fd.append('file_right', fileB, fileB.name);
+  const ha = qs('#hybrid-a').value, hb = qs('#hybrid-b').value;
+  if (ha==='true' || ha==='false') fd.append('left_hybrid', ha);
+  if (hb==='true' || hb==='false') fd.append('right_hybrid', hb);
+
+  try{
+    const resp = await fetch('/api/eval_compare', { method:'POST', body: fd });
+    if (!resp.ok){ status.textContent='Error: '+await resp.text(); return; }
+    const data = await resp.json();
+
+    RAW_ROWS = Array.isArray(data.results) ? data.results : [];
+    RAW_ROWS = RAW_ROWS.map(r => {
+      // derive delta if backend didn't provide it
+      const va = (r.left_rank!=null && r.left_rank>0) ? r.left_rank : Infinity;
+      const vb = (r.right_rank!=null && r.right_rank>0) ? r.right_rank : Infinity;
+      const d = vb - va;
+      return { ...r, delta: Number.isFinite(d) ? d : r.delta ?? null };
+    });
+
+    renderCards(
+      data,
+      aSel.value + (vaSel.value?`@v${vaSel.value}`:''),
+      bSel.value + (vbSel.value?`@v${vbSel.value}`:'')
+    );
+    renderTable();
+    status.textContent = 'OK';
+  }catch(e){
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
 
   runBtn.addEventListener('click', runCompare);
   document.addEventListener('keydown', (e)=>{ if ((e.ctrlKey||e.metaKey) && e.key==='Enter') runCompare(); });
@@ -401,7 +483,7 @@ function toCSV(rows){
   });
 
   // CSV export
-  dlBtn.addEventListener('click', ()=>{
+  qs('#download').addEventListener('click', ()=>{
     if (!RAW_ROWS.length){ status.textContent='Run comparison first.'; return; }
     const csv = toCSV(VIEW.length ? VIEW : RAW_ROWS);
     const blob = new Blob([csv], {type:'text/csv'});
@@ -410,7 +492,7 @@ function toCSV(rows){
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   });
 
-  // If deep-linked with autoload, user still must choose a CSV manually.
+  // If deep-linked with autoload, user still must choose CSV(s) manually for security.
   if (autoload){ /* noop */ }
 })();
 </script>
