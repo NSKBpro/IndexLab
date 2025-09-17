@@ -10,9 +10,6 @@ def get_model(model_name: str) -> SentenceTransformer:
     return _model_cache[model_name]
 
 def embed_texts(texts: list[str], model_name: str, normalize: bool) -> np.ndarray:
-    print(texts)
     model = get_model(model_name)
-    print(model)
     embs = model.encode(texts, normalize_embeddings=normalize, show_progress_bar=False)
-    print(embs)
     return embs.astype("float32")

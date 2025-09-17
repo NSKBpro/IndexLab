@@ -16,6 +16,4 @@ def load_backend(name: str, path: Path, manifest: dict):
         b = FaissIVF.load(path)
         b.nprobe = int(manifest.get("params", {}).get("nprobe", 10))
         return b
-    if name == "hnswlib":
-        return HnswLibBackend.load(path)
     raise ValueError(f"Unknown backend: {name}")

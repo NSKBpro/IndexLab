@@ -4,20 +4,32 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "VectorDash" }}</title>
+  <meta id="meta-theme-color" name="theme-color" content="#ffffff" />
+
+  <!-- Early theme: read localStorage or OS preference, avoid FOUC -->
+  <script>
+    (function () {
+      const stored = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const theme = stored || (prefersDark ? 'dark' : 'light');
+      const root = document.documentElement;
+      if (theme === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
+      // set initial theme-color for mobile UI chrome
+      const meta = document.getElementById('meta-theme-color');
+      if (meta) meta.setAttribute('content', theme === 'dark' ? '#0f172a' : '#ffffff');
+      // prime a global so Tailwind config can read darkMode: 'class'
+      window.__vd_theme = theme;
+    })();
+  </script>
 
   <!-- Tailwind (CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    // Dark mode preference
-    const theme = localStorage.getItem('theme') || 'light';
-    if (theme === 'dark') document.documentElement.classList.add('dark');
     tailwind.config = {
       darkMode: 'class',
       theme: {
         extend: {
-          colors: {
-            brand: { 600: '#635bff', 700: '#5149ff' }
-          }
+          colors: { brand: { 600: '#635bff', 700: '#5149ff' } }
         }
       }
     }
@@ -29,17 +41,48 @@
   <style>
     /* Smooth focus rings for inputs */
     .focus-ring { outline: none; }
-    .focus-ring:focus {
-      box-shadow: 0 0 0 3px rgba(99,91,255,.35);
-    }
+    .focus-ring:focus { box-shadow: 0 0 0 3px rgba(99,91,255,.35); }
+
     /* Nice scrollbar for logs */
     .scroll-slim::-webkit-scrollbar { height: 8px; width: 8px; }
     .scroll-slim::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
     .dark .scroll-slim::-webkit-scrollbar-thumb { background: #475569; }
+
+    /* Dark-only: make all controls darker without touching each page */
+    .dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+    .dark select,
+    .dark textarea {
+      background-color: #0f172a;   /* slate-900 */
+      border-color: #334155;       /* slate-700 */
+      color: #e5e7eb;              /* slate-200 */
+    }
+    .dark input::placeholder,
+    .dark textarea::placeholder { color: #94a3b8; opacity: 1; }
+    .dark input:focus,
+    .dark select:focus,
+    .dark textarea:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59,130,246,0.25);
+    }
+    /* File input button in dark */
+    .dark input[type="file"]::-webkit-file-upload-button,
+    .dark input[type="file"]::file-selector-button {
+      background: #0f172a; color: #e5e7eb; border: 1px solid #334155; border-radius: .5rem;
+    }
+
+    /* HTMX top progress bar */
+    #hx-progress {
+      position: fixed; left: 0; top: 0; height: 3px; width: 0;
+      background: #635bff; opacity: 0; z-index: 60;
+      transition: width .3s ease, opacity .3s ease;
+    }
   </style>
 </head>
 
 <body class="h-full bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100">
+  <div id="hx-progress"></div>
+
   <!-- Top Nav -->
   <header class="border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur sticky top-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -47,15 +90,18 @@
         <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white">V</span>
         <span>VectorDash</span>
       </a>
-      <nav class="flex items-center gap-6">
-        <a href="/" class="text-sm hover:text-brand-600">Upload</a>
-        <a href="/search" class="text-sm hover:text-brand-600">Search & Compare</a>
-        <a href="/sources" class="text-sm hover:text-brand-600">Sources</a>
-        <a href="/preview" class="text-sm hover:text-brand-600">Chunking Preview</a>
-        <a href="/analytics" class="text-sm hover:text-brand-600">Analytics</a>
-        <a href="/eval" class="text-sm hover:text-brand-600">Eval</a>
-        <a href="/eval-compare" class="text-sm hover:text-brand-600">Eval Compare</a>
-        <button id="themeToggle" class="text-sm px-3 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+
+      <nav id="main-nav" class="flex items-center gap-6">
+        <a href="/"               class="nav-link text-sm hover:text-brand-600">Upload</a>
+        <a href="/search"         class="nav-link text-sm hover:text-brand-600">Search & Compare</a>
+        <a href="/sources"        class="nav-link text-sm hover:text-brand-600">Sources</a>
+        <a href="/preview"        class="nav-link text-sm hover:text-brand-600">Chunking Preview</a>
+        <a href="/analytics"      class="nav-link text-sm hover:text-brand-600">Analytics</a>
+        <a href="/eval"           class="nav-link text-sm hover:text-brand-600">Eval</a>
+        <a href="/eval-compare"   class="nav-link text-sm hover:text-brand-600">Eval Compare</a>
+        <button id="themeToggle"
+                class="text-sm px-3 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+                type="button" aria-label="Toggle color theme">
           <span id="themeLabel">Dark</span> mode
         </button>
       </nav>
@@ -73,20 +119,78 @@
   </footer>
 
   <script>
+    // Theme toggle (updates <meta name="theme-color"> too)
     const tBtn = document.getElementById('themeToggle');
     const tLbl = document.getElementById('themeLabel');
+    const metaTheme = document.getElementById('meta-theme-color');
+
     function setTheme(mode) {
       const root = document.documentElement;
       if (mode === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
       localStorage.setItem('theme', mode);
       tLbl.textContent = (mode === 'dark') ? 'Light' : 'Dark';
+      if (metaTheme) metaTheme.setAttribute('content', mode === 'dark' ? '#0f172a' : '#ffffff');
     }
     tBtn?.addEventListener('click', () => {
       const isDark = document.documentElement.classList.contains('dark');
       setTheme(isDark ? 'light' : 'dark');
     });
-    // init label
-    setTheme(localStorage.getItem('theme') || 'light');
+    // init label from boot script
+    setTheme(window.__vd_theme || localStorage.getItem('theme') || 'light');
+
+    // Active nav highlighting by current path (adds aria-current and styles)
+    (function highlightNav(){
+      const path = location.pathname.replace(/\/+$/, '') || '/';
+      document.querySelectorAll('#main-nav .nav-link').forEach(a => {
+        const href = a.getAttribute('href');
+        const norm = (href || '').replace(/\/+$/, '') || '/';
+        if (norm === path) {
+          a.setAttribute('aria-current', 'page');
+          a.classList.add('font-semibold', 'text-brand-600', 'border-b-2', 'border-brand-600');
+        } else {
+          a.removeAttribute('aria-current');
+          a.classList.remove('font-semibold', 'text-brand-600', 'border-b-2', 'border-brand-600');
+        }
+      });
+    })();
+
+    // HTMX progress bar
+    (function hxProgress(){
+      const bar = document.getElementById('hx-progress');
+      let reqs = 0, trickleId = null;
+
+      function show() {
+        reqs++;
+        bar.style.opacity = '1';
+        // kick to 12% quickly so it feels alive
+        requestAnimationFrame(() => { bar.style.width = '12%'; });
+        // trickle forward
+        if (!trickleId) {
+          trickleId = setInterval(() => {
+            const cur = parseFloat(bar.style.width) || 0;
+            const next = Math.min(90, cur + Math.random() * 8 + 3);
+            bar.style.width = next + '%';
+          }, 400);
+        }
+      }
+      function hide() {
+        reqs = Math.max(0, reqs - 1);
+        if (reqs === 0) {
+          // finish & fade out
+          bar.style.width = '100%';
+          setTimeout(() => {
+            bar.style.opacity = '0';
+            bar.style.width = '0%';
+            if (trickleId) { clearInterval(trickleId); trickleId = null; }
+          }, 200);
+        }
+      }
+
+      document.body.addEventListener('htmx:beforeRequest', show);
+      document.body.addEventListener('htmx:afterRequest', hide);
+      document.body.addEventListener('htmx:responseError', hide);
+      document.body.addEventListener('htmx:sendError', hide);
+    })();
   </script>
 </body>
 </html>

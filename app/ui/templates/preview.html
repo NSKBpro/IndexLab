@@ -2,14 +2,54 @@
 {% block body %}
 <h1 class="text-2xl font-semibold mb-6">Chunking Preview</h1>
 
+<!-- Dark theme input tuning, scoped to this form only -->
+<style>
+@media (prefers-color-scheme: dark) {
+  .dark #pv-form input:not([type="checkbox"]),
+  .dark #pv-form select,
+  .dark #pv-form textarea {
+    background-color: #0f172a; /* slate-900 */
+    border-color: #334155;     /* slate-700 */
+    color: #e5e7eb;            /* slate-200 */
+  }
+  .dark #pv-form input::placeholder,
+  .dark #pv-form textarea::placeholder {
+    color: #94a3b8;            /* slate-400 */
+    opacity: 1;
+  }
+  .dark #pv-form input:focus,
+  .dark #pv-form select:focus,
+  .dark #pv-form textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.25);
+  }
+  /* ensure native select and file buttons look dark */
+  .dark #pv-form select { color-scheme: dark; }
+  .dark #pv-form input[type="file"]::-webkit-file-upload-button,
+  .dark #pv-form input[type="file"]::file-selector-button {
+    background: #0f172a; color: #e5e7eb; border: 1px solid #334155; border-radius: .5rem;
+  }
+}
+</style>
+
 <div class="grid lg:grid-cols-2 gap-6">
   <!-- Controls -->
-  <section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+  <section class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
     <form id="pv-form" enctype="multipart/form-data" class="space-y-4">
+      <!-- Presets -->
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm font-medium text-slate-600 dark:text-slate-300 mr-1">Presets:</span>
+        <button type="button" class="preset-btn rounded-lg px-3 py-1.5 text-sm border hover:bg-slate-50 dark:hover:bg-slate-700/40" data-preset="fast">Fast</button>
+        <button type="button" class="preset-btn rounded-lg px-3 py-1.5 text-sm border hover:bg-slate-50 dark:hover:bg-slate-700/40" data-preset="balanced">Balanced</button>
+        <button type="button" class="preset-btn rounded-lg px-3 py-1.5 text-sm border hover:bg-slate-50 dark:hover:bg-slate-700/40" data-preset="accurate">Accurate</button>
+        <span class="ml-auto text-xs text-slate-500">Values are editable.</span>
+      </div>
+
       <div class="grid sm:grid-cols-3 gap-4">
         <div>
           <label class="text-sm font-medium">Mode</label>
-          <select name="chunk_mode" class="mt-1 w-full rounded-md border px-3 py-2">
+          <select name="chunk_mode" id="chunk_mode" class="mt-1 w-full rounded-xl border px-3 py-2 bg-white dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700">
             <option value="fixed_chars">fixed_chars</option>
             <option value="sentences">sentences</option>
             <option value="headings">headings</option>
@@ -17,54 +57,62 @@
         </div>
         <div>
           <label class="text-sm font-medium">Size</label>
-          <input type="number" name="chunk_size" value="1000" min="200" step="50" class="mt-1 w-full rounded-md border px-3 py-2"/>
+          <input type="number" name="chunk_size" id="chunk_size" value="1000" min="200" step="50" class="mt-1 w-full rounded-xl border px-3 py-2 bg-white dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700"/>
         </div>
         <div>
           <label class="text-sm font-medium">Overlap</label>
-          <input type="number" name="chunk_overlap" value="150" min="0" step="25" class="mt-1 w-full rounded-md border px-3 py-2"/>
+          <input type="number" name="chunk_overlap" id="chunk_overlap" value="150" min="0" step="25" class="mt-1 w-full rounded-xl border px-3 py-2 bg-white dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700"/>
         </div>
       </div>
 
       <div class="grid sm:grid-cols-3 gap-4">
         <div>
           <label class="text-sm font-medium">Text column (file)</label>
-          <input name="text_column" placeholder="e.g., text" class="mt-1 w-full rounded-md border px-3 py-2"/>
+          <input name="text_column" placeholder="e.g., text" class="mt-1 w-full rounded-xl border px-3 py-2 bg-white dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700"/>
         </div>
         <div class="flex items-center gap-2">
           <label class="inline-flex items-center gap-2 text-sm mt-6">
-            <input type="checkbox" name="full_file" id="full_file" class="rounded border"/>
+            <input type="checkbox" name="full_file" id="full_file" class="rounded border dark:border-slate-600"/>
             Full file
           </label>
         </div>
         <div>
           <label class="text-sm font-medium">Rows to sample</label>
-          <input type="number" name="rows_to_sample" id="rows_to_sample" value="25" min="1" class="mt-1 w-full rounded-md border px-3 py-2"/>
+          <input type="number" name="rows_to_sample" id="rows_to_sample" value="25" min="1" class="mt-1 w-full rounded-xl border px-3 py-2 bg-white dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700"/>
         </div>
       </div>
 
-      <div class="grid gap-3">
+      <div class="grid gap-2">
         <label class="text-sm font-medium">Paste text</label>
         <textarea name="text" id="pv-text" rows="8"
-          class="w-full rounded-md border px-3 py-2 font-mono text-xs"
+          class="w-full rounded-xl border px-3 py-2 font-mono text-xs bg-white dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700"
           placeholder="Paste a few paragraphs or sections…"></textarea>
-        <div class="flex items-center gap-3">
-          <span class="text-xs text-slate-500">or upload a file</span>
-          <input type="file" name="file" accept=".csv,.xlsx,.xls,.json,.txt,.md"
-            class="block text-sm file:mr-2 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-brand-600 file:text-white hover:file:bg-brand-700"/>
+        <div class="flex items-center justify-between text-xs text-slate-500">
+          <div>
+            <span id="charCount">0 chars</span>
+            <span class="mx-1">•</span>
+            <span id="estChunks">~0 est. chunks</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-slate-500">or upload a file</span>
+            <input type="file" name="file" accept=".csv,.xlsx,.xls,.json,.txt,.md"
+              class="block text-sm rounded-md border px-2 py-1 bg-white dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700 file:mr-2 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-brand-600 file:text-white hover:file:bg-brand-700"/>
+          </div>
         </div>
       </div>
 
       <div class="grid sm:grid-cols-3 gap-4 items-end">
         <div>
           <label class="text-sm font-medium">Page</label>
-          <input type="number" name="page" id="page" value="1" min="1" class="mt-1 w-full rounded-md border px-3 py-2"/>
+          <input type="number" name="page" id="page" value="1" min="1" class="mt-1 w-full rounded-xl border px-3 py-2 bg-white dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700"/>
         </div>
         <div>
           <label class="text-sm font-medium">Page size</label>
-          <input type="number" name="page_size" id="page_size" value="100" min="1" class="mt-1 w-full rounded-md border px-3 py-2"/>
+          <input type="number" name="page_size" id="page_size" value="100" min="1" class="mt-1 w-full rounded-xl border px-3 py-2 bg-white dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700"/>
         </div>
         <div class="flex items-center gap-3">
-          <button type="submit" class="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Preview</button>
+          <button type="submit" class="rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Preview</button>
+          <button id="clearBtn" type="button" class="rounded-xl border px-4 py-2 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Clear</button>
           <span id="pv-status" class="text-sm text-slate-500"></span>
         </div>
       </div>
@@ -72,12 +120,20 @@
   </section>
 
   <!-- Results -->
-  <section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold mb-2">Chunks</h2>
+  <section class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="text-lg font-semibold">Chunks</h2>
+      <div class="flex items-center gap-2">
+        <button id="copyAllBtn" class="text-xs rounded-lg border px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800">Copy loaded</button>
+        <button id="downloadBtn" class="text-xs rounded-lg border px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800">Download .txt</button>
+      </div>
+    </div>
     <div id="pv-summary" class="text-sm text-slate-600 dark:text-slate-300 mb-2"></div>
-    <ol id="pv-list" class="space-y-2 max-h-[480px] overflow-auto scroll-slim">
-    <!-- sentinel must be inside the scroll container -->
-    <li id="pv-sentinel" class="h-4"></li>
+
+    <ol id="pv-list" class="space-y-2 max-h-[480px] overflow-auto scroll-slim relative">
+      <!-- chunks injected before this sentinel -->
+      <li id="pv-sentinel" class="h-4"></li>
+      <div id="spinner" class="hidden absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-slate-500">Loading…</div>
     </ol>
 
     <div class="flex items-center justify-between mt-3">
@@ -88,6 +144,9 @@
   </section>
 </div>
 
+<!-- Toast -->
+<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden rounded-xl bg-slate-900 text-white px-4 py-2 shadow-lg"></div>
+
 <script>
 const form = document.getElementById('pv-form');
 const statusEl = document.getElementById('pv-status');
@@ -97,26 +156,72 @@ const pageSizeEl = form.querySelector('[name="page_size"]');
 const fullFileEl = form.querySelector('[name="full_file"]');
 const rowsEl = form.querySelector('[name="rows_to_sample"]');
 const sentinel = document.getElementById('pv-sentinel');
-const nextBtn = document.getElementById('nextPage');   // keep if you still have the button
-const prevBtn = document.getElementById('prevPage');   // optional
+const nextBtn = document.getElementById('nextPage');
+const prevBtn = document.getElementById('prevPage');
+const pageInput = document.getElementById('page');
+const sizeInput = document.getElementById('chunk_size');
+const ovlInput  = document.getElementById('chunk_overlap');
+const modeInput = document.getElementById('chunk_mode');
+const textArea  = document.getElementById('pv-text');
+const charCount = document.getElementById('charCount');
+const estChunks = document.getElementById('estChunks');
+const toastEl   = document.getElementById('toast');
+const copyAllBtn= document.getElementById('copyAllBtn');
+const downloadBtn= document.getElementById('downloadBtn');
+const clearBtn  = document.getElementById('clearBtn');
+const spinner   = document.getElementById('spinner');
 
+function toast(msg){ toastEl.textContent=msg; toastEl.classList.remove('hidden'); setTimeout(()=>toastEl.classList.add('hidden'),1400); }
 function esc(s){ return (s??'').toString().replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+
+// ── Presets ──────────────────────────────────────────────
+document.querySelectorAll('.preset-btn').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    const p=b.dataset.preset;
+    const presets={
+      fast:     {chunk_mode:'fixed_chars', chunk_size:700,  chunk_overlap:80},
+      balanced: {chunk_mode:'fixed_chars', chunk_size:900,  chunk_overlap:120},
+      accurate: {chunk_mode:'fixed_chars', chunk_size:1200, chunk_overlap:200}
+    };
+    const v=presets[p]; if(!v) return;
+    modeInput.value=v.chunk_mode; sizeInput.value=v.chunk_size; ovlInput.value=v.chunk_overlap;
+    updateCounters();
+    toast(p[0].toUpperCase()+p.slice(1)+' preset applied');
+  });
+});
+
+// ── Text counters ───────────────────────────────────────
+function updateCounters(){
+  const chars = (textArea.value || '').length;
+  charCount.textContent = `${chars} chars`;
+  const size = Math.max(1, Number(sizeInput.value||1000));
+  const ovl  = Math.max(0, Number(ovlInput.value||0));
+  const stride = Math.max(1, size - ovl);
+  const est = chars ? Math.ceil(Math.max(1, (chars - ovl) / stride)) : 0;
+  estChunks.textContent = `~${est} est. chunks`;
+}
+textArea.addEventListener('input', updateCounters);
+[sizeInput, ovlInput].forEach(el=> el.addEventListener('input', updateCounters));
+updateCounters();
+
+// ── Full file toggle ────────────────────────────────────
 fullFileEl?.addEventListener('change', () => { if (rowsEl) rowsEl.disabled = fullFileEl.checked; });
 
-// ---- Paging state ----
+// ── Paging state ────────────────────────────────────────
 let totalChunks = 0;
-let loadedEnd = 0;          // absolute count rendered
+let loadedEnd = 0;
 let loading = false;
-let nextPageToLoad = 1;     // 1-based
+let nextPageToLoad = 1;
+let loadedChunks = [];
 
-function resetPaging() {
+function resetPaging(startPage){
   totalChunks = 0;
   loadedEnd = 0;
   loading = false;
-  nextPageToLoad = 1;
+  nextPageToLoad = startPage || 1;
+  loadedChunks = [];
   statusEl.textContent = '';
   sumEl.textContent = '';
-  // Keep only the sentinel inside the list
   listEl.innerHTML = '<li id="pv-sentinel" class="h-4"></li>';
 }
 
@@ -130,7 +235,7 @@ function buildFD(page) {
 }
 
 async function fetchPage(page) {
-  loading = true;
+  loading = true; spinner.classList.remove('hidden');
   try {
     const res = await fetch('/api/chunk_preview', { method:'POST', body: buildFD(page) });
     const txt = await res.text();
@@ -140,64 +245,113 @@ async function fetchPage(page) {
     statusEl.textContent = 'JS error: ' + err;
     return null;
   } finally {
-    loading = false;
+    loading = false; spinner.classList.add('hidden');
   }
 }
 
-function renderSummary(data){
+function normalizeChunk(c){
+  if (typeof c === 'string') return { text: c, length: c.length };
+  if (c && typeof c === 'object') {
+    const t = c.text ?? c.chunk ?? '';
+    return { text: String(t), length: Number(c.length ?? t?.length ?? 0) };
+  }
+  return { text: '', length: 0 };
+}
+
+function renderSummary(data, usedPage, usedPageSize){
   const st = data.stats || {};
-  const total = data.total_chunks || 0;
+  const total = Number(data.total_chunks ?? 0) || 0;
   const truncated = data.truncated_input ? ' • input TRUNCATED by safety cap' : '';
+  const avg = st.avg!=null ? Number(st.avg).toFixed(0) : '—';
+  const min = st.min!=null ? st.min : '—';
+  const max = st.max!=null ? st.max : '—';
+  const sampleChars = data.sample_chars!=null ? data.sample_chars : (form.get('text')||'').length;
+
   sumEl.innerHTML = `
     <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 mr-2">
       <strong class="mr-1">${total}</strong> chunks
     </span>
-    avg=${(st.avg||0).toFixed(0)} • min=${st.min||0} • max=${st.max||0} • sample_chars=${data.sample_chars}${truncated}
+    avg=${avg} • min=${min} • max=${max} • sample_chars=${sampleChars}${truncated}
   `;
-  totalChunks = total;
+
+  totalChunks = total || totalChunks;
+  const maxPage = Math.max(1, Math.ceil((totalChunks || (usedPage*usedPageSize)) / usedPageSize));
+  document.getElementById('pageInfo').textContent = `Page ${usedPage} / ${maxPage}`;
 }
 
-function appendChunks(data){
-  const start = (data.page_start ?? 0) + 1;
-  const chunks = data.chunks || [];
-  if (chunks.length === 0) return;
+function chunkBar(length, size){
+  const pct = Math.min(100, Math.round( (length / Math.max(1,size)) * 100 ));
+  return `
+    <div class="h-1.5 w-full bg-slate-200 dark:bg-slate-700 rounded">
+      <div class="h-1.5 rounded" style="width:${pct}%;" class="bg-brand-500"></div>
+    </div>
+  `;
+}
 
-  // Insert before the sentinel
+function appendChunks(data, usedPage, usedPageSize){
+  const chunksRaw = data.chunks || [];
+  if (!chunksRaw.length) return;
+
+  const startIdx = (data.page_start != null) ? Number(data.page_start)+1 : ((usedPage-1)*usedPageSize + 1);
+  const endIdx   = (data.page_end   != null) ? Number(data.page_end)     : (startIdx - 1 + chunksRaw.length);
+
   const frag = document.createDocumentFragment();
-  chunks.forEach((c, i) => {
+  chunksRaw.forEach((c, i) => {
+    const {text, length} = normalizeChunk(c);
+    loadedChunks.push(text);
+
     const li = document.createElement('li');
-    li.className = "bg-slate-50 dark:bg-slate-900 rounded-md border border-slate-200 dark:border-slate-700 p-3";
+    li.className = "bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-3";
     li.innerHTML = `
-      <div class="text-xs text-slate-500 mb-1">#${(start + i)} • len=${c.length}</div>
-      <pre class="whitespace-pre-wrap text-xs">${esc(c)}</pre>`;
+      <div class="flex items-center justify-between mb-1">
+        <div class="text-xs text-slate-500">#${startIdx + i} • len=${length}</div>
+        <button class="copy-chunk text-[11px] rounded border px-2 py-0.5" data-text=${JSON.stringify(text)}>Copy</button>
+      </div>
+      ${chunkBar(length, Number(sizeInput.value||1000))}
+      <pre class="whitespace-pre-wrap text-xs mt-2">${esc(text)}</pre>`;
     frag.appendChild(li);
   });
   listEl.insertBefore(frag, document.getElementById('pv-sentinel'));
 
-  loadedEnd = data.page_end ?? loadedEnd;
+  listEl.querySelectorAll('.copy-chunk').forEach(btn=>{
+    if (btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', async ()=>{
+      try{ await navigator.clipboard.writeText(btn.dataset.text||''); toast('Copied'); }catch{ toast('Copy failed'); }
+    });
+  });
+
+  loadedEnd = endIdx;
 }
 
-async function loadFirstPage(){
-  resetPaging();
+async function loadFrom(page){
+  const usedPage = Math.max(1, Number(page||1));
+  const usedPageSize = Math.max(1, Number(pageSizeEl.value||100));
+  resetPaging(usedPage);
   statusEl.textContent = 'Running…';
-  const data = await fetchPage(1);
-  if (!data) return;
-  renderSummary(data);
-  appendChunks(data);
+
+  const data = await fetchPage(usedPage);
+  if (!data){ statusEl.textContent=''; return; }
+
+  renderSummary(data, usedPage, usedPageSize);
+  appendChunks(data, usedPage, usedPageSize);
   statusEl.textContent = (data.chunks && data.chunks.length) ? '' : 'No chunks produced.';
-  nextPageToLoad = 2;  // next page after a successful first load
+  nextPageToLoad = usedPage + 1;
 }
 
 async function loadNextPage(){
   if (loading) return;
-  if (loadedEnd >= totalChunks) return;       // all done
-  const data = await fetchPage(nextPageToLoad);
+  const usedPageSize = Math.max(1, Number(pageSizeEl.value||100));
+  const next = nextPageToLoad;
+  const data = await fetchPage(next);
   if (!data) return;
-  appendChunks(data);
-  nextPageToLoad += 1;                        // advance only after success
+
+  renderSummary(data, next, usedPageSize);
+  appendChunks(data, next, usedPageSize);
+  nextPageToLoad = next + 1;
 }
 
-// Infinite scroll: observe sentinel INSIDE the scrollable list
+// Infinite scroll
 const io = new IntersectionObserver((entries) => {
   for (const e of entries) {
     if (e.isIntersecting) loadNextPage();
@@ -205,21 +359,54 @@ const io = new IntersectionObserver((entries) => {
 }, { root: listEl, threshold: 0.2 });
 io.observe(sentinel);
 
-// Submit triggers fresh run
-form.addEventListener('submit', (e) => { e.preventDefault(); loadFirstPage(); });
+// Submit: start from the page input
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const p = Math.max(1, Number(pageInput.value||1));
+  loadFrom(p);
+});
 
-// Optional buttons
-nextBtn?.addEventListener('click', (e) => { e.preventDefault(); loadNextPage(); });
+// Prev/Next buttons
+nextBtn?.addEventListener('click', (e) => {
+  e.preventDefault();
+  const p = Math.max(1, Number(pageInput.value||1)) + 1;
+  pageInput.value = String(p);
+  loadFrom(p);
+});
 prevBtn?.addEventListener('click', (e) => {
   e.preventDefault();
-  // simple prev: recompute from start up to previous page
-  const ps = Number(pageSizeEl?.value || '100');
-  const targetLast = Math.max(0, loadedEnd - ps);
-  nextPageToLoad = Math.max(1, nextPageToLoad - 1);
-  // easiest: reload from scratch (keeps code simple)
-  loadFirstPage();
+  const p = Math.max(1, Number(pageInput.value||1) - 1);
+  pageInput.value = String(p);
+  loadFrom(p);
+});
+
+// Copy all & Download
+copyAllBtn.addEventListener('click', async ()=>{
+  try{
+    const text = loadedChunks.join('\n\n---\n\n');
+    await navigator.clipboard.writeText(text);
+    toast('All loaded chunks copied');
+  }catch{ toast('Copy failed'); }
+});
+downloadBtn.addEventListener('click', ()=>{
+  const text = loadedChunks.join('\n\n---\n\n');
+  const blob = new Blob([text], {type:'text/plain;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'chunk_preview.txt';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+clearBtn.addEventListener('click', ()=>{
+  textArea.value=''; updateCounters();
+  resetPaging(Number(pageInput.value||1));
+  statusEl.textContent='';
+  sumEl.textContent='';
+});
+
+// Keyboard: Ctrl/Cmd + Enter runs
+document.addEventListener('keydown', (e)=>{
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') form.requestSubmit();
 });
 </script>
-
-
 {% endblock %}

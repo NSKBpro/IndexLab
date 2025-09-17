@@ -2,15 +2,15 @@
 {% block body %}
 <h1 class="text-2xl font-semibold mb-6">Index Analytics</h1>
 
-<section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+<section class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
   <div class="grid sm:grid-cols-4 gap-4 items-end">
     <div class="sm:col-span-2">
       <label class="text-sm font-medium">Index</label>
-      <select id="index-select" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+      <select id="index-select" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
     </div>
     <div>
       <label class="text-sm font-medium opacity-0">.</label>
-      <button id="load-btn" class="w-full rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Load stats</button>
+      <button id="load-btn" class="w-full rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Load stats</button>
     </div>
     <div>
       <label class="text-sm font-medium">Status</label>
@@ -18,44 +18,221 @@
     </div>
   </div>
 
-  <div id="stats" class="grid sm:grid-cols-4 gap-4 mt-6"></div>
+  <!-- Cards -->
+  <div id="cards" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+    <!-- injected -->
+  </div>
+
+  <!-- Histogram (optional) -->
+  <div id="hist-wrap" class="mt-6 hidden">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-sm font-semibold">Length distribution</h3>
+      <div id="hist-legend" class="text-xs text-slate-500"></div>
+    </div>
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-900/60">
+      <div id="hist" class="w-full overflow-x-auto">
+        <!-- svg injected -->
+      </div>
+      <div id="hist-note" class="text-[11px] text-slate-500 mt-2"></div>
+    </div>
+  </div>
+
+  <!-- Manifest -->
+  <div class="mt-6 grid lg:grid-cols-2 gap-4">
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900/60">
+      <h3 class="text-sm font-semibold mb-2">Build config</h3>
+      <dl id="manifest-dl" class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        <!-- injected -->
+      </dl>
+    </div>
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900/60">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-semibold">Raw manifest</h3>
+        <div class="flex items-center gap-2">
+          <button id="copy-manifest" class="text-xs rounded border px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800">Copy JSON</button>
+          <button id="export-json" class="text-xs rounded border px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800">Export JSON</button>
+        </div>
+      </div>
+      <pre id="manifest-json" class="text-xs whitespace-pre-wrap max-h-64 overflow-auto bg-slate-50 dark:bg-slate-900 p-3 rounded-lg"></pre>
+    </div>
+  </div>
 </section>
 
+<!-- Toast -->
+<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden rounded-xl bg-slate-900 text-white px-4 py-2 shadow-lg"></div>
+
 <script>
-// Small helper
-function esc(s){ return (s??'').toString().replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+// ---------- utils ----------
+const qs=(s,el=document)=>el.querySelector(s);
+const qsa=(s,el=document)=>[...el.querySelectorAll(s)];
+const esc=(s)=> (s??'').toString().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const fmt=(n,dec=0)=> (n==null||isNaN(n))?'—':Number(n).toFixed(dec);
+function toast(msg){ const t=qs('#toast'); t.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),1400); }
 
+// robust index normalization
+function normalizeIndexes(x){
+  if (!x) return [];
+  let arr=[];
+  if (Array.isArray(x)) arr=x;
+  else if (Array.isArray(x.indexes)) arr=x.indexes;
+  else if (Array.isArray(x.data)) arr=x.data;
+  else if (x.items && Array.isArray(x.items)) arr=x.items;
+  else if (x.indexes && typeof x.indexes==='object') arr=Object.values(x.indexes);
+  return arr.map(it=>{
+    if (typeof it==='string') return it;
+    if (it && typeof it==='object'){
+      return it.index_name || it.name || it.id || it.index || it.title || it.slug;
+    }
+    return null;
+  }).filter(Boolean);
+}
+
+// safe nested get
+function get(obj, path, dflt='—'){ try{ return path.split('.').reduce((a,k)=>a?.[k], obj) ?? dflt; }catch{ return dflt; } }
+
+// ---------- fetchers ----------
 async function fetchIndexes(){
-  const res = await fetch('/api/indexes');
-  if (!res.ok) throw new Error(await res.text());
-  const data = await res.json();
-  return (data.indexes || []).map(x => x.index_name);
+  const r=await fetch('/api/indexes'); const data=await r.json();
+  return normalizeIndexes(data);
 }
-
 async function fetchStats(indexName){
-  const res = await fetch(`/api/stats/${encodeURIComponent(indexName)}`);
-  if (!res.ok) throw new Error(await res.text());
-  return await res.json();
+  const r=await fetch(`/api/stats/${encodeURIComponent(indexName)}`);
+  if(!r.ok) throw new Error(await r.text());
+  return await r.json();
 }
 
-function renderStatCard(label, value){
+// ---------- cards ----------
+function card(label, value, sub=''){
   return `
-    <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-900">
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900/60">
       <div class="text-xs text-slate-500">${esc(label)}</div>
       <div class="text-xl font-semibold mt-1">${esc(value)}</div>
+      ${sub?`<div class="text-[11px] text-slate-500 mt-1">${esc(sub)}</div>`:''}
     </div>`;
 }
+function renderCards(s){
+  const c = [];
+  c.push(card('Chunks', s.chunks ?? '—'));
+  c.push(card('Avg length', fmt(s.len_avg,1)));
+  c.push(card('P95 length', fmt(s.len_p95,0)));
+  c.push(card('Max length', s.len_max ?? '—'));
+  qs('#cards').innerHTML = c.join('');
+}
 
+// ---------- histogram (optional) ----------
+function normalizeHistogram(s){
+  // Accept many shapes: {hist:{bins:[...], counts:[...]}}, {len_hist:{...}}, {hist_bins, hist_counts}, or {hist:[counts], bins:[...]}
+  let bins=null, counts=null, note='';
+  if (s.hist && Array.isArray(s.hist.counts)) { counts = s.hist.counts; bins = s.hist.bins || s.hist.edges || null; }
+  else if (s.len_hist && Array.isArray(s.len_hist.counts)) { counts=s.len_hist.counts; bins=s.len_hist.bins || s.len_hist.edges || null; }
+  else if (Array.isArray(s.hist_counts)) { counts=s.hist_counts; bins=s.hist_bins || s.bins || null; }
+  else if (Array.isArray(s.hist)) { counts=s.hist; bins=s.bins || s.edges || null; }
+  // If bins missing, synthesize from min/max/size
+  if (!counts) return null;
+  if (!bins){
+    const min = s.len_min ?? 0;
+    const max = s.len_max ?? (s.len_avg? s.len_avg*3 : 1000);
+    const n = counts.length;
+    const step = (max-min)/n || 1;
+    bins = Array.from({length:n+1}, (_,i)=> min + i*step);
+    note = 'Bins approximated from min/max.';
+  }
+  // Legend values
+  const avg = s.len_avg, p95 = s.len_p95, max = s.len_max;
+  return { bins, counts, note, avg, p95, max };
+}
+function renderHistogram(h){
+  const wrap = qs('#hist-wrap');
+  if (!h){ wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+  const W = 640, H = 160, pad = {l:24, r:8, t:8, b:22};
+  const maxCount = Math.max(1, ...h.counts);
+  const n = h.counts.length;
+  const wBar = Math.max(1, Math.floor((W - pad.l - pad.r) / n));
+  const scaleY = (c)=> Math.round((c / maxCount) * (H - pad.t - pad.b));
+  const minX = h.bins[0], maxX = h.bins[h.bins.length-1];
+
+  let bars = '';
+  for (let i=0;i<n;i++){
+    const x = pad.l + i*wBar;
+    const hgt = scaleY(h.counts[i]);
+    const y = H - pad.b - hgt;
+    bars += `<rect x="${x}" y="${y}" width="${wBar-1}" height="${hgt}" rx="2" ry="2" class="fill-slate-400 dark:fill-slate-600"></rect>`;
+  }
+
+  // Axis ticks (4)
+  let ticks=''; const T=4;
+  for(let i=0;i<=T;i++){
+    const x = pad.l + Math.round((i/T)*(W-pad.l-pad.r));
+    const val = Math.round(minX + (i/T)*(maxX-minX));
+    ticks += `<text x="${x}" y="${H-6}" text-anchor="middle" class="fill-slate-500" font-size="10">${esc(String(val))}</text>`;
+  }
+
+  const svg = `
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">
+      <rect x="0" y="0" width="${W}" height="${H}" rx="8" ry="8" class="fill-transparent"></rect>
+      ${bars}
+      ${ticks}
+    </svg>`;
+  qs('#hist').innerHTML = svg;
+
+  const parts = [];
+  if (h.avg!=null) parts.push(`avg ${fmt(h.avg,0)}`);
+  if (h.p95!=null) parts.push(`p95 ${fmt(h.p95,0)}`);
+  if (h.max!=null) parts.push(`max ${fmt(h.max,0)}`);
+  qs('#hist-legend').textContent = parts.join(' • ') || '';
+  qs('#hist-note').textContent = h.note || '';
+}
+
+// ---------- manifest ----------
+function renderManifest(s){
+  const man = s.manifest || {};
+  const dl = qs('#manifest-dl');
+  const rows = [
+    ['Model', man.model ?? get(s,'manifest.model')],
+    ['Dim', man.dim ?? get(s,'manifest.dim')],
+    ['Backend', man.backend ?? get(s,'manifest.backend')],
+    ['Normalize embeddings', (man.normalize_embeddings ?? get(s,'manifest.normalize_embeddings')) ?? '—'],
+    ['Chunk mode', man.chunk_mode ?? get(s,'manifest.chunk_mode')],
+    ['Chunk size', man.chunk_size ?? get(s,'manifest.chunk_size')],
+    ['Chunk overlap', man.chunk_overlap ?? get(s,'manifest.chunk_overlap')],
+    ['Created at', man.created_at ?? get(s,'manifest.created_at')],
+  ];
+  dl.innerHTML = rows.map(([k,v])=>`
+    <dt class="text-xs text-slate-500">${esc(k)}</dt>
+    <dd class="text-sm font-medium">${esc(v ?? '—')}</dd>
+  `).join('');
+
+  const raw = JSON.stringify(man, null, 2);
+  qs('#manifest-json').textContent = raw;
+
+  qs('#copy-manifest').onclick = async ()=>{
+    try{ await navigator.clipboard.writeText(raw); toast('Manifest copied'); }catch{ toast('Copy failed'); }
+  };
+  qs('#export-json').onclick = ()=>{
+    const blob = new Blob([JSON.stringify({stats:s, manifest:man}, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=`index_stats_${(s.index_name||'index')}.json`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+}
+
+// ---------- init ----------
 (async function init(){
   const sel = document.getElementById('index-select');
   const status = document.getElementById('status');
-  const stats = document.getElementById('stats');
   const btn = document.getElementById('load-btn');
+
+  // deep link support (?index=foo&autoload=1)
+  const params = new URLSearchParams(location.search);
+  const idxFromUrl = params.get('index');
+  const autoload = params.get('autoload') === '1';
 
   // populate selector
   try {
     const names = await fetchIndexes();
-    sel.innerHTML = names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') || '<option disabled>(no indexes)</option>';
+    sel.innerHTML = names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('') || '<option disabled>(no indexes)</option>';
+    if (idxFromUrl && names.includes(idxFromUrl)) sel.value = idxFromUrl;
   } catch (e) {
     status.textContent = 'Failed to load indexes: ' + e;
   }
@@ -64,36 +241,33 @@ function renderStatCard(label, value){
     const ix = sel.value;
     if (!ix){ status.textContent = 'No index selected'; return; }
     status.textContent = 'Loading…';
-    stats.innerHTML = '';
+    qs('#cards').innerHTML = '';
+    qs('#hist-wrap').classList.add('hidden');
+    qs('#manifest-dl').innerHTML = '';
+    qs('#manifest-json').textContent = '';
+
+    // update URL for shareability
+    history.replaceState(null, '', `?${new URLSearchParams({index:ix, autoload:'1'}).toString()}`);
+
     try {
       const s = await fetchStats(ix);
-      const man = s.manifest || {};
-      const cards = [
-        renderStatCard('Chunks', s.chunks ?? '—'),
-        renderStatCard('Avg length', s.len_avg?.toFixed ? s.len_avg.toFixed(1) : s.len_avg ?? '—'),
-        renderStatCard('P95 length', s.len_p95?.toFixed ? s.len_p95.toFixed(0) : s.len_p95 ?? '—'),
-        renderStatCard('Max length', s.len_max ?? '—'),
-      ];
-      const meta = `
-        <div class="sm:col-span-4 text-sm text-slate-500">
-          Model: <span class="font-medium">${esc(man.model ?? '—')}</span> •
-          Backend: <span class="font-medium">${esc(manifestOr(s, 'manifest.backend'))}</span> •
-          Created: <span class="font-medium">${esc(man.created_at ?? '—')}</span>
-        </div>`;
-      stats.innerHTML = cards.join('') + meta;
+      renderCards(s);
+      renderManifest(s);
+      const h = normalizeHistogram(s);
+      renderHistogram(h);
       status.textContent = 'OK';
     } catch (e) {
-      status.textContent = 'Error: ' + e;
+      status.textContent = 'Error: ' + e.message;
     }
   }
 
-  function manifestOr(obj, path){
-    try { return path.split('.').reduce((a,k)=>a&&a[k], obj) ?? '—'; } catch { return '—'; }
-  }
-
   btn.addEventListener('click', load);
-  // auto-load first
-  if (sel.value) load();
+  if (autoload || sel.value) load();
+
+  // hotkey: Ctrl/Cmd + Enter loads
+  document.addEventListener('keydown', (e)=>{
+    if ((e.ctrlKey||e.metaKey) && e.key==='Enter') btn.click();
+  });
 })();
 </script>
 {% endblock %}

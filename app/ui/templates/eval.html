@@ -2,19 +2,20 @@
 {% block body %}
 <h1 class="text-2xl font-semibold mb-6">Evaluation (Per-Question)</h1>
 
-<section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+<section class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+  <!-- Controls -->
   <div class="grid sm:grid-cols-5 gap-4 items-end">
     <div class="sm:col-span-2">
       <label class="text-sm font-medium">Index</label>
-      <select id="index-select" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
+      <select id="index-select" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
     </div>
     <div>
       <label class="text-sm font-medium">Top-K</label>
-      <input id="k" type="number" min="1" max="100" value="10" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+      <input id="k" type="number" min="1" max="100" value="10" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
     </div>
     <div>
       <label class="text-sm font-medium">Hybrid</label>
-      <select id="hybrid" class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+      <select id="hybrid" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
         <option value="">Default</option>
         <option value="true">On</option>
         <option value="false">Off</option>
@@ -25,36 +26,44 @@
       <input id="csv" type="file" accept=".csv,.json,.xlsx" class="mt-1 w-full text-sm">
     </div>
   </div>
-  <div class="flex items-center gap-3 mt-4">
-    <button id="run" class="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Run Eval</button>
-    <button id="download" class="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm">Download CSV</button>
+
+  <div class="flex flex-wrap items-center gap-3 mt-4">
+    <button id="run" class="rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Run Eval</button>
+    <button id="download" class="rounded-xl border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm">Download CSV</button>
+    <div class="flex items-center gap-2 ml-auto">
+      <label class="inline-flex items-center gap-2 text-sm">
+        <input type="checkbox" id="return_details" checked class="rounded border" />
+        Return details
+      </label>
+      <label class="inline-flex items-center gap-1 text-sm">
+        hits:
+        <input type="number" id="include_hits" value="3" min="0" class="w-16 rounded-md border px-2 py-1"/>
+      </label>
+      <label class="inline-flex items-center gap-2 text-sm">
+        <input type="checkbox" id="only_misses" class="rounded border" />
+        Show misses only
+      </label>
+      <input id="filter" placeholder="Filter question/ids…" class="rounded-md border px-3 py-2 text-sm">
+    </div>
     <div id="status" class="text-sm text-slate-500">—</div>
   </div>
-  <div class="flex items-center gap-2">
-    <label class="inline-flex items-center gap-2 text-sm mt-6">
-      <input type="checkbox" name="return_details" checked class="rounded border" />
-      Return details
-    </label>
-    <label class="inline-flex items-center gap-1 text-sm mt-6">
-      hits:
-      <input type="number" name="include_hits" value="3" min="0" class="w-16 rounded-md border px-2 py-1"/>
-    </label>
-  </div>
 
-  <div class="mt-6 grid sm:grid-cols-3 gap-4" id="summary"></div>
+  <!-- Summary cards -->
+  <div class="mt-6 grid sm:grid-cols-4 gap-4" id="summary"></div>
 
+  <!-- Table -->
   <div class="mt-6 overflow-auto border border-slate-200 dark:border-slate-700 rounded-lg">
     <table class="min-w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-900">
         <tr>
-          <th class="text-left px-3 py-2">#</th>
-          <th class="text-left px-3 py-2">Question</th>
-          <th class="text-left px-3 py-2">Expected ID</th>
-          <th class="text-left px-3 py-2">Expected Answer</th>
-          <th class="text-left px-3 py-2">Rank</th>
-          <th class="text-left px-3 py-2">Score</th>
-          <th class="text-left px-3 py-2">Hits(k)</th>
-          <th class="text-left px-3 py-2">Top-1</th>
+          <th data-key="#" class="th px-3 py-2 text-left">#</th>
+          <th data-key="question" class="th px-3 py-2 text-left cursor-pointer">Question</th>
+          <th data-key="expected_id" class="th px-3 py-2 text-left cursor-pointer">Expected ID</th>
+          <th class="px-3 py-2 text-left">Expected Answer</th>
+          <th data-key="rank" class="th px-3 py-2 text-left cursor-pointer">Rank</th>
+          <th data-key="score" class="th px-3 py-2 text-left cursor-pointer">Score</th>
+          <th class="px-3 py-2 text-left">Hits(k)</th>
+          <th class="px-3 py-2 text-left">Top-1</th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -62,148 +71,345 @@
   </div>
 </section>
 
-<script>
-function esc(s){ return (s??'').toString().replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+<!-- Chunk Modal -->
+<div id="chunk-modal" class="fixed inset-0 hidden items-center justify-center bg-black/50 z-50">
+  <div class="max-w-4xl w-[92%] bg-white dark:bg-slate-900 rounded-2xl shadow-lg overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b dark:border-slate-700">
+      <h3 id="chunk-title" class="text-sm font-semibold">Chunk</h3>
+      <div class="flex items-center gap-2">
+        <button id="chunk-copy" class="text-xs rounded-lg border px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800">Copy</button>
+        <button id="chunk-close" class="text-slate-500 hover:text-slate-700">✕</button>
+      </div>
+    </div>
+    <pre id="chunk-body" class="p-4 text-xs whitespace-pre-wrap overflow-auto max-h-[72vh]"></pre>
+  </div>
+</div>
 
-async function fetchIndexes(){
-  const r = await fetch('/api/indexes');
-  if(!r.ok) throw new Error(await r.text());
-  const data = await r.json();
-  return (data.indexes || []).map(x => x.index_name);
+<!-- Toast -->
+<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden rounded-xl bg-slate-900 text-white px-4 py-2 shadow-lg"></div>
+
+<script>
+// ============== utils ==============
+const qs=(s,el=document)=>el.querySelector(s);
+const qsa=(s,el=document)=>[...el.querySelectorAll(s)];
+const esc=(s)=> (s??'').toString().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function toast(msg){ const t=qs('#toast'); t.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),1400); }
+function trim(s, n=260){ const x=(s||'').toString(); return x.length>n ? x.slice(0,n-1)+'…' : x; }
+
+// robust index normalization (tolerates many shapes)
+function normalizeIndexes(x){
+  if (!x) return [];
+  let arr=[];
+  if (Array.isArray(x)) arr=x;
+  else if (Array.isArray(x.indexes)) arr=x.indexes;
+  else if (Array.isArray(x.data)) arr=x.data;
+  else if (x.items && Array.isArray(x.items)) arr=x.items;
+  else if (x.indexes && typeof x.indexes==='object') arr=Object.values(x.indexes);
+  return arr.map(it=>{
+    if (typeof it==='string') return it;
+    if (it && typeof it==='object'){
+      return it.index_name || it.name || it.id || it.index || it.title || it.slug;
+    }
+    return null;
+  }).filter(Boolean);
 }
 
+// ============== chunk modal ==============
+async function openChunk(indexName, docId, qText){
+  const modal=qs('#chunk-modal'), title=qs('#chunk-title'), body=qs('#chunk-body');
+  title.textContent=`index: ${indexName} • id: ${docId}`; body.textContent='Loading…';
+  modal.classList.remove('hidden'); modal.classList.add('flex');
+  try{
+    const url = `/api/chunk?index_name=${encodeURIComponent(indexName)}&doc_id=${encodeURIComponent(docId)}&q=${encodeURIComponent(qText||'')}`;
+    const res = await fetch(url);
+    const txt = await res.text();
+    if (!res.ok){ body.textContent=`Error ${res.status}: ${txt}`; return; }
+    const data = JSON.parse(txt);
+    body.textContent = data.text || '';
+    const s=data.source||{}, head=[]; if(s.title) head.push(s.title); if(s.path) head.push(s.path); if(s.url) head.push(s.url); else if(s.origin_url) head.push(s.origin_url);
+    if(head.length) title.textContent=head.join(' — ');
+  }catch(e){ body.textContent='JS error: '+e; }
+}
+(() => {
+  const modal=qs('#chunk-modal');
+  qs('#chunk-close').addEventListener('click', ()=>{ modal.classList.add('hidden'); modal.classList.remove('flex'); });
+  modal.addEventListener('click', (e)=>{ if(e.target===modal){ modal.classList.add('hidden'); modal.classList.remove('flex'); }});
+  qs('#chunk-copy').addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(qs('#chunk-body').textContent||''); toast('Copied'); }catch{ toast('Copy failed'); } });
+})();
+
+// ============== data / state ==============
+let RAW_RESULTS = [];   // full payload results
+let VIEW = [];          // filtered + sorted
+let SORT = { key: 'rank', dir: 'asc' };
+
+// ============== fetchers ==============
+async function fetchIndexes(){
+  const r = await fetch('/api/indexes');
+  const data = await r.json();
+  return normalizeIndexes(data);
+}
+async function runEvalFetch({index, k, hybrid, return_details, include_hits, file}){
+  const fd=new FormData();
+  fd.append('index_name', index);
+  fd.append('k', String(k));
+  if (hybrid===true) fd.append('hybrid', 'true');
+  if (hybrid===false) fd.append('hybrid', 'false');
+  fd.append('return_details', return_details ? 'true' : 'false');
+  fd.append('include_hits', String(include_hits));
+  fd.append('file', file, file.name);
+  const resp = await fetch('/api/eval', { method:'POST', body: fd });
+  if(!resp.ok) throw new Error(await resp.text());
+  return await resp.json();
+}
+
+// ============== table rendering helpers ==============
+function expectedPreviewFromHits(row){
+  if (!row?.hits || !row?.expected_id) return '';
+  const h = row.hits.find(h => h.id === row.expected_id);
+  return h?.preview || '';
+}
+function scoreAtRank(row){
+  if (!row?.found || !Array.isArray(row?.top_scores) || !row?.rank) return '';
+  const idx = row.rank - 1;
+  const v = row.top_scores[idx];
+  return (typeof v === 'number') ? v.toFixed(4) : '';
+}
+function hitsBlock(row, indexName){
+  const hits = Array.isArray(row?.hits) ? row.hits : [];
+  if (!hits.length) return '—';
+  return hits.map(h => {
+    const openBtn = `<button class="ml-2 text-[11px] underline" onclick='openChunk(${JSON.stringify(indexName)}, ${JSON.stringify(h.id||"")}, ${JSON.stringify(row.question||"")})'>Open</button>`;
+    return `
+      <div class="mb-2">
+        <span class="font-mono text-xs">${esc(h.id||'')}</span>
+        <span class="text-xs text-slate-500">(${typeof h.score==='number'?h.score.toFixed(4):'—'})</span>
+        ${openBtn}
+        <div class="text-xs text-slate-600 dark:text-slate-300">${esc(trim(h.preview||''))}</div>
+      </div>`;
+  }).join('');
+}
+function top1Cell(row, indexName){
+  const id = row?.top_ids?.[0];
+  const sc = row?.top_scores?.[0];
+  if (!id) return '—';
+  const ok = id===row.expected_id;
+  const tag = ok ? `<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">match</span>`
+                 : `<span class="ml-2 text-[11px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-800">miss</span>`;
+  const openBtn = `<button class="ml-2 text-[11px] underline" onclick='openChunk(${JSON.stringify(indexName)}, ${JSON.stringify(id)}, ${JSON.stringify(row.question||"")})'>Open</button>`;
+  return `<span class="font-mono">${esc(id)}</span> (${typeof sc==='number'?sc.toFixed(4):'—'}) ${tag} ${openBtn}`;
+}
+function rowClass(row){
+  if (!row?.found) return 'bg-rose-50/60 dark:bg-rose-900/20';
+  if (row.rank===1) return 'bg-emerald-50/50 dark:bg-emerald-900/20';
+  return 'bg-amber-50/50 dark:bg-amber-900/20';
+}
+
+// ============== render ==============
+function renderSummaryCards(payload){
+  const total = payload?.total ?? RAW_RESULTS.length;
+  // fallbacks if server didn't send these
+  const recall = (payload?.recall_at_k != null) ? payload.recall_at_k
+                : (total? (RAW_RESULTS.filter(r=>r.found).length/total) : 0);
+  const mrr = (payload?.mrr != null) ? payload.mrr
+              : (total? RAW_RESULTS.reduce((s,r)=>s+(r.rank?1/r.rank:0),0)/total : 0);
+  const top1 = total? (RAW_RESULTS.filter(r=>r.rank===1).length/total) : 0;
+
+  const box=(label,val)=>`
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900/60">
+      <div class="text-xs text-slate-500">${label}</div>
+      <div class="text-xl font-semibold mt-1">${val}</div>
+    </div>`;
+  qs('#summary').innerHTML =
+    box('Questions', esc(total)) +
+    box('Recall@K', (recall!=null? (recall*100).toFixed(1)+'%':'—')) +
+    box('MRR', (mrr!=null? mrr.toFixed(3):'—')) +
+    box('Top-1 Acc', (top1*100).toFixed(1)+'%');
+}
+
+function applyFilterSort(){
+  const onlyMisses = qs('#only_misses').checked;
+  const q = (qs('#filter').value||'').toLowerCase().trim();
+  VIEW = RAW_RESULTS.filter(r=>{
+    if (onlyMisses && r.rank===1) return false;
+    if (!q) return true;
+    const hay = [
+      r.question, r.expected_id,
+      r.top_ids?.[0], r.hits?.map(h=>h.id).join(' ')
+    ].join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+  // sort
+  const key = SORT.key, dir = SORT.dir;
+  VIEW.sort((a,b)=>{
+    const cmp = (x,y)=>{
+      if (x==null && y==null) return 0;
+      if (x==null) return -1;
+      if (y==null) return 1;
+      if (typeof x==='number' && typeof y==='number') return x-y;
+      return String(x).localeCompare(String(y));
+    };
+    if (key==='score'){ // score at rank
+      const sa = parseFloat(scoreAtRank(a)) || -Infinity;
+      const sb = parseFloat(scoreAtRank(b)) || -Infinity;
+      return dir==='asc' ? sa-sb : sb-sa;
+    }
+    if (key==='rank'){
+      const ra = a.rank ?? Infinity, rb = b.rank ?? Infinity;
+      return dir==='asc' ? ra-rb : rb-ra;
+    }
+    return dir==='asc' ? cmp(a[key], b[key]) : cmp(b[key], a[key]);
+  });
+}
+
+function renderTable(indexName){
+  applyFilterSort();
+  const tbody = qs('#tbody');
+  if (!VIEW.length){
+    tbody.innerHTML = `<tr><td class="px-3 py-6 text-slate-500" colspan="8">No rows.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = VIEW.map((d, i) => {
+    const topId = d.top_ids?.[0];
+    const topScore = (typeof d.top_scores?.[0]==='number') ? d.top_scores[0].toFixed(4) : '—';
+    const expPrev = expectedPreviewFromHits(d);
+    const scAt = scoreAtRank(d);
+    const hitsHTML = hitsBlock(d, indexName);
+    const cls = rowClass(d);
+    return `
+      <tr class="${cls}">
+        <td class="px-3 py-2 align-top">${i+1}</td>
+        <td class="px-3 py-2 align-top">
+          ${esc(d.question||'')}
+          <button class="ml-2 text-[11px] underline decoration-dotted" onclick='navigator.clipboard.writeText(${JSON.stringify(d.question||"")}).then(()=>toast("Question copied"))'>Copy</button>
+        </td>
+        <td class="px-3 py-2 align-top">
+          <span class="font-mono">${esc(d.expected_id||'')}</span>
+          <button class="ml-2 text-[11px] underline decoration-dotted" onclick='navigator.clipboard.writeText(${JSON.stringify(d.expected_id||"")}).then(()=>toast("Expected ID copied"))'>Copy</button>
+        </td>
+        <td class="px-3 py-2 align-top text-slate-600 dark:text-slate-300">${esc(trim(expPrev||'—'))}</td>
+        <td class="px-3 py-2 align-top">${d.found ? (d.rank ?? '—') : '—'}</td>
+        <td class="px-3 py-2 align-top">${d.found ? scAt : '—'}</td>
+        <td class="px-3 py-2 align-top">${hitsHTML}</td>
+        <td class="px-3 py-2 align-top">${top1Cell(d, indexName)}</td>
+      </tr>`;
+  }).join('');
+}
+
+// ============== CSV export ==============
+function toCSV(rows){
+  const header = ['question','expected_id','expected_answer','found','rank','score','top1_id','top1_score'];
+  const lines = rows.map(r=>{
+    const expPrev = expectedPreviewFromHits(r) || '';
+    const score = scoreAtRank(r) || '';
+    const top1id = r.top_ids?.[0] ?? '';
+    const top1sc = (typeof r.top_scores?.[0]==='number') ? r.top_scores[0] : '';
+    const cells = [
+      r.question||'',
+      r.expected_id||'',
+      expPrev,
+      r.found? 'true':'false',
+      r.rank ?? '',
+      score,
+      top1id,
+      top1sc
+    ].map(v=>{
+      const s = (v??'').toString();
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+    });
+    return cells.join(',');
+  });
+  return [header.join(','), ...lines].join('\n');
+}
+
+// ============== main ==============
 (async function init(){
-  const sel = document.getElementById('index-select');
-  const status = document.getElementById('status');
-  const tbody = document.getElementById('tbody');
-  const summary = document.getElementById('summary');
-  const runBtn = document.getElementById('run');
-  const dlBtn = document.getElementById('download');
-  const csvIn = document.getElementById('csv');
-  const kEl = document.getElementById('k');
-  const hybridEl = document.getElementById('hybrid');
-  const returnDetailsEl = document.querySelector('input[name="return_details"]');
-  const includeHitsEl = document.querySelector('input[name="include_hits"]');
+  const sel = qs('#index-select');
+  const status = qs('#status');
+  const runBtn = qs('#run');
+  const dlBtn = qs('#download');
+  const csvIn = qs('#csv');
+  const kEl = qs('#k');
+  const hybridEl = qs('#hybrid');
+  const retDet = qs('#return_details');
+  const inclHits = qs('#include_hits');
 
-  let lastResults = [];
+  // deep link (?index=foo&k=10&hybrid=true&autoload=1)
+  const params = new URLSearchParams(location.search);
+  const idxFromUrl = params.get('index');
+  const kFromUrl = params.get('k');
+  const hybridFromUrl = params.get('hybrid');
+  const autoload = params.get('autoload') === '1';
 
-  try {
+  try{
     const names = await fetchIndexes();
-    sel.innerHTML = names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') || '<option disabled>(no indexes)</option>';
-  } catch(e) {
+    sel.innerHTML = names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('') || '<option disabled>(no indexes)</option>';
+    if (idxFromUrl && names.includes(idxFromUrl)) sel.value = idxFromUrl;
+    if (kFromUrl) kEl.value = kFromUrl;
+    if (hybridFromUrl==='true' || hybridFromUrl==='false') hybridEl.value = hybridFromUrl;
+  }catch(e){
     status.textContent = 'Failed to load indexes: ' + e;
   }
 
   async function runEval(){
     const file = csvIn.files?.[0];
-    if(!file){ status.textContent = 'Please choose a CSV.'; return; }
+    if (!file){ status.textContent = 'Please choose a CSV.'; return; }
 
-    const fd = new FormData();
-    fd.append('index_name', sel.value);
-    fd.append('k', String(parseInt(kEl.value || '10', 10)));
-    if (hybridEl.value === 'true') fd.append('hybrid', 'true');
-    if (hybridEl.value === 'false') fd.append('hybrid', 'false');
-    fd.append('return_details', returnDetailsEl.checked);
-    fd.append('include_hits', includeHitsEl.value);
-    fd.append('file', file, file.name);
+    const index = sel.value;
+    const k = Math.max(1, parseInt(kEl.value||'10',10));
+    const hybrid = (hybridEl.value==='true') ? true : (hybridEl.value==='false' ? false : undefined);
+    const return_details = retDet.checked;
+    const include_hits = Math.max(0, parseInt(inclHits.value||'3',10));
+
+    // update URL (shareable)
+    const p = new URLSearchParams({ index, k:String(k), autoload:'1' });
+    if (hybrid!==undefined) p.set('hybrid', String(hybrid));
+    history.replaceState(null,'',`?${p.toString()}`);
 
     status.textContent = 'Running…';
-    tbody.innerHTML = '';
-    summary.innerHTML = '';
+    qs('#summary').innerHTML = '';
+    qs('#tbody').innerHTML = '';
 
-    const resp = await fetch('/api/eval', { method:'POST', body: fd });
-    if(!resp.ok){ status.textContent = 'Error: ' + await resp.text(); return; }
-    const data = await resp.json();
+    let payload;
+    try{
+      payload = await runEvalFetch({index, k, hybrid, return_details, include_hits, file});
+    }catch(err){
+      status.textContent = 'Error: ' + err.message;
+      return;
+    }
 
-    summary.innerHTML = `
-      <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-900">
-        <div class="text-xs text-slate-500">Questions</div>
-        <div class="text-xl font-semibold mt-1">${esc(data.total ?? 0)}</div>
-      </div>
-      <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-900">
-        <div class="text-xs text-slate-500">Recall@K</div>
-        <div class="text-xl font-semibold mt-1">${data.recall_at_k != null ? (data.recall_at_k*100).toFixed(1)+'%' : '—'}</div>
-      </div>
-      <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-900">
-        <div class="text-xs text-slate-500">MRR</div>
-        <div class="text-xl font-semibold mt-1">${data.mrr != null ? data.mrr.toFixed(3) : '—'}</div>
-      </div>`;
-
-    const results = data.results || [];
-    lastResults = results;
-
-    tbody.innerHTML = results.map((d, i) => {
-        const topId = d.top_ids?.[0];
-        const topScore = d.top_scores?.[0];
-        const hitsPreview = (d.hits || []).map(h => 
-            `<div><span class="font-mono text-xs">${esc(h.id)}</span> (${h.score.toFixed(4)})<br><span class="text-slate-500">${esc(h.preview)}</span></div>`
-        ).join('');
-
-        // 2. FIND THE EXPECTED ANSWER FROM THE HITS ARRAY
-        let expectedPreview = '—';
-        if (d.found && d.hits) {
-            const expectedHit = d.hits.find(h => h.id === d.expected_id);
-            if (expectedHit) {
-                expectedPreview = expectedHit.preview;
-            }
-        }
-
-        return `
-          <tr class="${d.found ? '' : 'bg-red-50/60 dark:bg-red-900/20'}">
-            <td class="px-3 py-2 align-top">${i+1}</td>
-            <td class="px-3 py-2 align-top">${esc(d.question)}</td>
-            <td class="px-3 py-2 align-top">${esc(d.expected_id)}</td>
-            <td class="px-3 py-2 align-top text-slate-500">${esc(expectedPreview)}</td>
-            <td class="px-3 py-2 align-top">${d.rank ?? '—'}</td>
-            <td class="px-3 py-2 align-top">${d.found ? (d.top_scores[d.rank-1] ?? 0).toFixed(4) : '—'}</td>
-            <td class="px-3 py-2 align-top">${hitsPreview || '—'}</td>
-            <td class="px-3 py-2 align-top">
-              ${topId ? `<span class="font-mono">${esc(topId)}</span> (${(topScore??0).toFixed(4)})` : '—'}
-            </td>
-          </tr>
-        `
-    }).join('');
-
+    RAW_RESULTS = Array.isArray(payload?.results) ? payload.results : [];
+    renderSummaryCards(payload || {});
+    renderTable(index);
     status.textContent = 'OK';
   }
 
   runBtn.addEventListener('click', runEval);
+  document.addEventListener('keydown', (e)=>{ if ((e.ctrlKey||e.metaKey) && e.key==='Enter') runEval(); });
 
-  function toCSV(rows){
-    const header = 'question,expected_id,expected_answer,found,rank,score,top1_id,top1_score';
-    const lines = rows.map(r => {
-        // 3. ADD THE SAME LOGIC TO THE CSV EXPORT
-        let expectedPreview = '';
-        if (r.found && r.hits) {
-            const expectedHit = r.hits.find(h => h.id === r.expected_id);
-            if (expectedHit) {
-                expectedPreview = expectedHit.preview;
-            }
-        }
-        return [
-          `"${(r.question||'').replace(/"/g,'""')}"`,
-          `"${(r.expected_id||'').replace(/"/g,'""')}"`,
-          `"${(expectedPreview||'').replace(/"/g,'""')}"`,
-          r.found,
-          r.rank ?? '',
-          r.found ? (r.top_scores[r.rank-1] ?? '') : '',
-          r.top_ids?.[0] ?? '',
-          r.top_scores?.[0] ?? ''
-        ].join(',');
+  // filter, toggles, sorting
+  qs('#filter').addEventListener('input', ()=> renderTable(sel.value));
+  qs('#only_misses').addEventListener('change', ()=> renderTable(sel.value));
+  qsa('th.th').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const key = th.dataset.key;
+      if (!key) return;
+      SORT = { key, dir: (SORT.key===key && SORT.dir==='asc') ? 'desc' : 'asc' };
+      renderTable(sel.value);
     });
-    return [header, ...lines].join('\n');
-  }
+  });
 
-  dlBtn.addEventListener('click', () => {
-    if(!lastResults.length){ status.textContent = 'Run eval first.'; return; }
-    const csv = toCSV(lastResults);
+  // CSV export
+  dlBtn.addEventListener('click', ()=>{
+    if (!RAW_RESULTS.length){ status.textContent='Run eval first.'; return; }
+    const csv = toCSV(VIEW.length ? VIEW : RAW_RESULTS);
     const blob = new Blob([csv], {type:'text/csv'});
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'eval_details.csv';
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href=url; a.download='eval_details.csv';
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   });
+
+  // autoload (if deep-link is used) — still need user to choose a file to actually run
+  if (autoload && sel.value){ /* noop: cannot autoload file */ }
 })();
 </script>
 {% endblock %}

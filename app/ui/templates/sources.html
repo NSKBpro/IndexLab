@@ -1,64 +1,335 @@
 {% extends "base.html" %}
 {% block body %}
-<h1 class="text-2xl font-semibold mb-6">Sources</h1>
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-semibold">Sources</h1>
+    <p class="text-sm text-slate-500 mt-1">Pick an index to view its ingested files and metadata. Filter, sort, export.</p>
+  </div>
+  <div class="flex items-center gap-2">
+    <button id="btn-health" class="rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-sm hover:bg-emerald-500">Health</button>
+  </div>
+</div>
 
-<section class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
-  <div class="grid sm:grid-cols-3 gap-4 items-end">
+<section class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+  <!-- Controls -->
+  <div class="grid md:grid-cols-3 gap-4 items-end">
     <div>
       <label class="text-sm font-medium">Index</label>
-      <select id="index-select" class="mt-1 w-full rounded-md border px-3 py-2"></select>
+      <select id="index-select" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
     </div>
     <div>
-      <label class="text-sm font-medium opacity-0">.</label>
-      <button id="load-btn" class="w-full rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Load Sources</button>
+      <label class="text-sm font-medium">Filter</label>
+      <input id="filter-input" placeholder="filename, sha, or date…" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"/>
+    </div>
+    <div class="flex gap-2">
+      <button id="load-btn" class="w-full rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Load Sources</button>
+      <button id="export-btn" class="rounded-xl border px-4 py-2 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Export CSV</button>
     </div>
   </div>
 
-  <div id="summary" class="text-sm mt-4"></div>
-  <div class="overflow-auto mt-3">
-    <table id="src-table" class="min-w-full text-sm border-separate border-spacing-y-1"></table>
+  <!-- Summary -->
+  <div id="summary-cards" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
+    <!-- cards injected -->
+  </div>
+
+  <!-- Table -->
+  <div class="mt-4">
+    <div class="flex items-center justify-between mb-2">
+      <div id="summary" class="text-sm text-slate-500"></div>
+      <div class="flex items-center gap-3">
+        <label class="text-xs text-slate-500">Page size
+          <select id="page-size" class="ml-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs">
+            <option>10</option><option>25</option><option>50</option><option>100</option>
+          </select>
+        </label>
+        <div class="flex items-center gap-1">
+          <button id="prev-page" class="rounded-md border px-2 py-1 text-xs border-slate-300 dark:border-slate-700">Prev</button>
+          <span id="page-info" class="text-xs text-slate-500 px-1">—</span>
+          <button id="next-page" class="rounded-md border px-2 py-1 text-xs border-slate-300 dark:border-slate-700">Next</button>
+        </div>
+      </div>
+    </div>
+    <div class="overflow-auto">
+      <table id="src-table" class="min-w-full text-sm">
+        <!-- head/body injected -->
+      </table>
+      <div id="table-skeleton" class="space-y-2 hidden">
+        <div class="animate-pulse h-8 rounded bg-slate-200/60 dark:bg-slate-700/40"></div>
+        <div class="animate-pulse h-8 rounded bg-slate-200/60 dark:bg-slate-700/40"></div>
+        <div class="animate-pulse h-8 rounded bg-slate-200/60 dark:bg-slate-700/40"></div>
+        <div class="animate-pulse h-8 rounded bg-slate-200/60 dark:bg-slate-700/40"></div>
+      </div>
+    </div>
   </div>
 </section>
 
+<!-- Toast -->
+<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden rounded-xl bg-slate-900 text-white px-4 py-2 shadow-lg"></div>
+
 <script>
+/* ---------- utils ---------- */
+const qs=(s,el=document)=>el.querySelector(s), qsa=(s,el=document)=>[...el.querySelectorAll(s)];
+const toast=(m)=>{const t=qs('#toast'); t.textContent=m; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),1500);};
+const save=(k,v)=>localStorage.setItem(k, JSON.stringify(v));
+const load=(k,d)=>{ try{return JSON.parse(localStorage.getItem(k)) ?? d;} catch {return d;} };
+const fmtDate=(s)=> s ? new Date(s).toISOString().replace('T',' ').slice(0,19)+' UTC' : '';
+const esc=(x)=> (x??'').toString().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+/* ---------- state ---------- */
+let RAW_ROWS = [];          // full set from server [{file, rows, sha256, added_at, url?}]
+let VIEW_ROWS = [];         // filtered + sorted
+let SORT = { key: 'file', dir: 'asc' };
+let PAGE = 1;
+let PAGE_SIZE = 10;
+let CURRENT_INDEX = '';
+
+/* ---------- init ---------- */
+(async function init(){
+  // deep link (?index=foo&autoload=1)
+  const params = new URLSearchParams(location.search);
+  const idxFromUrl = params.get('index');
+  const autoload = params.get('autoload') === '1';
+
+  await fetchIndexes();
+  const sel = qs('#index-select');
+  const saved = load('indexlab_sources_index', null);
+
+  if (idxFromUrl && [...sel.options].some(o=>o.value===idxFromUrl)) sel.value = idxFromUrl;
+  else if (saved && [...sel.options].some(o=>o.value===saved)) sel.value = saved;
+
+  if (autoload || sel.value) loadSources();
+
+  // events
+  qs('#load-btn').addEventListener('click', loadSources);
+  qs('#filter-input').addEventListener('input', () => { PAGE=1; applyFilterSortPaginate(); renderTable(); });
+  qs('#page-size').addEventListener('change', (e)=> { PAGE_SIZE = Number(e.target.value||10); PAGE=1; renderTable(); save('indexlab_sources_psize', PAGE_SIZE); });
+  PAGE_SIZE = Number(load('indexlab_sources_psize', 10));
+  qs('#page-size').value = PAGE_SIZE;
+  qs('#prev-page').addEventListener('click', ()=>{ if (PAGE>1){ PAGE--; renderTable(); }});
+  qs('#next-page').addEventListener('click', ()=>{ const max = Math.max(1, Math.ceil(VIEW_ROWS.length / PAGE_SIZE)); if (PAGE<max){ PAGE++; renderTable(); }});
+  qs('#export-btn').addEventListener('click', exportCSV);
+  qs('#btn-health').addEventListener('click', pingHealth);
+
+  // hotkey: Ctrl/Cmd + Enter loads
+  document.addEventListener('keydown', (e)=> {
+    if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return;
+    loadSources();
+  });
+})();
+
+/* ---------- fetchers ---------- */
 async function fetchIndexes(){
-  const res = await fetch('/api/indexes');
-  const data = await res.json();
-  const sel = document.getElementById('index-select');
-  sel.innerHTML = (data.indexes||[]).map(x => `<option value="${x.index_name}">${x.index_name}</option>`).join('');
-}
-async function loadSources(){
-  const name = document.getElementById('index-select').value;
-  if(!name) return;
-  const res = await fetch(`/api/sources/${name}`);
-  const data = await res.json();
-  const summary = document.getElementById('summary');
-  summary.textContent = `index=${data.index_name} • chunks=${data.count} • model=${data.model} • backend=${data.backend} • created_at=${data.created_at}`;
-  const tbl = document.getElementById('src-table');
-  const rows = data.sources ? Object.entries(data.sources) : [];
-  if(!rows.length){
-    tbl.innerHTML = '<tbody><tr><td class="px-2 py-1 text-slate-500">No source metadata recorded.</td></tr></tbody>';
-    return;
+  try{
+    const r = await fetch('/api/indexes');
+    const data = await r.json();
+    const sel = qs('#index-select');
+    sel.innerHTML = (data.indexes||[]).map(x => `<option value="${esc(x.index_name)}">${esc(x.index_name)}</option>`).join('') || '<option value="">(no indexes)</option>';
+  }catch(e){
+    toast('Failed to load indexes'); console.error(e);
   }
-  tbl.innerHTML = `
-    <thead><tr>
-      <th class="text-left px-2 py-1">File</th>
-      <th class="text-left px-2 py-1">Rows</th>
-      <th class="text-left px-2 py-1">SHA-256</th>
-      <th class="text-left px-2 py-1">Added at (UTC)</th>
-    </tr></thead>
-    <tbody>
-      ${rows.map(([fname,meta]) => `
-        <tr class="bg-slate-50 dark:bg-slate-800/40">
-          <td class="px-2 py-1">${fname}</td>
-          <td class="px-2 py-1">${meta.rows ?? ''}</td>
-          <td class="px-2 py-1 font-mono text-xs">${meta.sha256 ?? ''}</td>
-          <td class="px-2 py-1">${meta.added_at ?? ''}</td>
-        </tr>`).join('')}
-    </tbody>`;
 }
 
-document.getElementById('load-btn').addEventListener('click', loadSources);
-fetchIndexes().then(loadSources);
+/* ---------- Safer source normalization (added) ---------- */
+// Accept object map or array; include optional url/origin_url/path if present
+function normalizeSources(sources){
+  if (!sources) return [];
+  if (Array.isArray(sources)) {
+    return sources.map(row => ({
+      file:     row.file || row.path || row.origin_path || row.title || '',
+      rows:     row.rows ?? row.count ?? null,
+      sha256:   row.sha256 || row.hash || '',
+      added_at: row.added_at || row.ingested_at || row.created_at || '',
+      url:      row.url || row.origin_url || ''
+    }));
+  }
+  if (typeof sources === 'object') {
+    return Object.entries(sources).map(([file, meta]) => ({
+      file,
+      rows:     meta?.rows ?? meta?.count ?? null,
+      sha256:   meta?.sha256 || meta?.hash || '',
+      added_at: meta?.added_at || meta?.ingested_at || meta?.created_at || '',
+      url:      meta?.url || meta?.origin_url || ''
+    }));
+  }
+  return [];
+}
+
+async function loadSources(){
+  const name = qs('#index-select').value;
+  if(!name){ toast('Pick an index'); return; }
+  CURRENT_INDEX = name;
+  save('indexlab_sources_index', name);
+  // update URL
+  const p = new URLSearchParams({ index:name, autoload:'1' });
+  history.replaceState(null, '', `?${p.toString()}`);
+
+  // skeleton
+  toggleSkeleton(true);
+  qs('#src-table').innerHTML = '';
+  qs('#summary-cards').innerHTML = '';
+  qs('#summary').textContent = 'Loading…';
+
+  try{
+    const r = await fetch(`/api/sources/${encodeURIComponent(name)}`);
+    const data = await r.json();
+
+    // summary
+    renderSummaryCards(data);
+    qs('#summary').textContent = `index=${data.index_name || name} • chunks=${data.count ?? '—'} • model=${data.model ?? '—'} • backend=${data.backend ?? '—'} • created_at=${data.created_at ?? '—'}`;
+
+    // rows (now using safer normalization)
+    RAW_ROWS = normalizeSources(data.sources);
+    PAGE = 1;
+    SORT = { key: 'file', dir: 'asc' };
+    applyFilterSortPaginate();
+    renderTable();
+  }catch(e){
+    console.error(e);
+    qs('#summary').textContent = 'Failed to load sources.';
+    qs('#src-table').innerHTML = '';
+  }finally{
+    toggleSkeleton(false);
+  }
+}
+
+/* ---------- summary cards ---------- */
+function renderSummaryCards(data){
+  const box = (label, value, sub='') => `
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900/60">
+      <div class="text-xs text-slate-500">${label}</div>
+      <div class="text-xl font-semibold mt-0.5">${esc(value ?? '—')}</div>
+      ${sub ? `<div class="text-[11px] text-slate-500 mt-1">${esc(sub)}</div>` : ''}
+    </div>`;
+  const cards = [
+    box('Index', data.index_name || CURRENT_INDEX),
+    box('Chunks', data.count ?? '—'),
+    box('Model', data.model ?? '—', data.dim ? `${data.dim} dims` : ''),
+    box('Backend', data.backend ?? '—', data.created_at ? fmtDate(data.created_at) : '')
+  ];
+  qs('#summary-cards').innerHTML = cards.join('');
+}
+
+/* ---------- table rendering ---------- */
+function toggleSkeleton(on){
+  qs('#table-skeleton').classList.toggle('hidden', !on);
+}
+
+function headerCell(key, label){
+  const is = SORT.key === key, dir = is ? (SORT.dir==='asc' ? '▲' : '▼') : '⇵';
+  return `<th data-key="${key}" class="sorter sticky top-0 bg-white dark:bg-slate-800 z-10 text-left px-2 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700 cursor-pointer select-none">
+    ${label} <span class="opacity-70">${dir}</span>
+  </th>`;
+}
+
+function renderTable(){
+  const tbl = qs('#src-table');
+  if (!VIEW_ROWS.length){
+    tbl.innerHTML = `<tbody><tr><td class="px-2 py-3 text-slate-500">No source metadata recorded.</td></tr></tbody>`;
+    qs('#page-info').textContent = '0 / 0';
+    return;
+  }
+
+  const start = (PAGE-1)*PAGE_SIZE;
+  const pageRows = VIEW_ROWS.slice(start, start + PAGE_SIZE);
+
+  const thead = `
+    <thead class="text-xs">
+      <tr>
+        ${headerCell('file','File')}
+        ${headerCell('rows','Rows')}
+        ${headerCell('sha256','SHA-256')}
+        ${headerCell('added_at','Added at (UTC)')}
+        <th class="sticky top-0 bg-white dark:bg-slate-800 z-10 text-left px-2 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Actions</th>
+      </tr>
+    </thead>`;
+
+  const tbody = `
+    <tbody>
+      ${pageRows.map(r => `
+        <tr class="odd:bg-slate-50 dark:odd:bg-slate-800/40">
+          <td class="px-2 py-2">
+            <div class="font-medium">${esc(r.file)}</div>
+          </td>
+          <td class="px-2 py-2">${r.rows ?? ''}</td>
+          <td class="px-2 py-2 font-mono text-xs">
+            ${r.sha256 ? `<span title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</span>` : ''}
+          </td>
+          <td class="px-2 py-2">${esc(r.added_at || '')}</td>
+          <td class="px-2 py-2">
+            <div class="flex items-center gap-2 text-xs">
+              ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" class="border rounded px-2 py-1">View</a>` : ''}
+              ${r.sha256 ? `<button class="btn-copy border rounded px-2 py-1" data-text="${esc(r.sha256)}">Copy SHA</button>` : ''}
+              <button class="btn-copy border rounded px-2 py-1" data-text="${esc(r.file)}">Copy path</button>
+            </div>
+          </td>
+        </tr>
+      `).join('')}
+    </tbody>`;
+
+  tbl.innerHTML = thead + tbody;
+
+  // sorting handlers
+  qsa('.sorter', tbl).forEach(th => th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (!key) return;
+    SORT = { key, dir: (SORT.key===key && SORT.dir==='asc') ? 'desc' : 'asc' };
+    PAGE = 1;
+    applyFilterSortPaginate();
+    renderTable();
+  }));
+
+  // copy handlers
+  qsa('.btn-copy', tbl).forEach(b => b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(b.dataset.text || ''); toast('Copied'); } catch { toast('Copy failed'); }
+  }));
+
+  // page info
+  const max = Math.max(1, Math.ceil(VIEW_ROWS.length / PAGE_SIZE));
+  qs('#page-info').textContent = `${PAGE} / ${max}`;
+}
+
+/* ---------- filtering, sorting ---------- */
+function applyFilterSortPaginate(){
+  const q = (qs('#filter-input').value || '').toLowerCase().trim();
+  // filter
+  VIEW_ROWS = RAW_ROWS.filter(r => {
+    if (!q) return true;
+    return [r.file, r.sha256, r.added_at, r.rows?.toString() || ''].some(v => (v||'').toString().toLowerCase().includes(q));
+  });
+  // sort
+  const key = SORT.key, dir = SORT.dir;
+  VIEW_ROWS.sort((a,b) => {
+    const av=a[key], bv=b[key];
+    if (key==='rows') { const na=Number(av)||0, nb=Number(bv)||0; return dir==='asc' ? na-nb : nb-na; }
+    const sa=(av??'').toString(), sb=(bv??'').toString();
+    return dir==='asc' ? sa.localeCompare(sb) : sb.localeCompare(sa);
+  });
+}
+
+/* ---------- export ---------- */
+function exportCSV(){
+  if (!VIEW_ROWS.length){ toast('Nothing to export'); return; }
+  const header = ['file','rows','sha256','added_at'];
+  const lines = [header.join(',')].concat(VIEW_ROWS.map(r => [
+    csvCell(r.file), csvCell(r.rows), csvCell(r.sha256), csvCell(r.added_at)
+  ].join(',')));
+  const blob = new Blob([lines.join('\n')], {type: 'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `sources_${CURRENT_INDEX||'index'}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+function csvCell(v){
+  const s = (v??'').toString();
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+  return s;
+}
+
+/* ---------- misc ---------- */
+async function pingHealth(){
+  try{ const r = await fetch('/api/health'); toast(r.ok ? 'API healthy' : 'Health failed'); }
+  catch { toast('API unreachable'); }
+}
 </script>
 {% endblock %}

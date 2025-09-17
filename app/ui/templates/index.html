@@ -4,26 +4,30 @@
 
 <div class="grid md:grid-cols-2 gap-6">
   <!-- Left: form -->
-  <form id="upload-form" hx-post="/api/upload" hx-encoding="multipart/form-data" hx-trigger="submit" hx-swap="none"
-        class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+  <form id="upload-form"
+        hx-post="/api/upload"
+        hx-encoding="multipart/form-data"
+        hx-trigger="submit"
+        hx-swap="none"
+        class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
     <div class="space-y-5">
       <div>
         <label class="text-sm font-medium">Index name</label>
         <input name="index_name" required
-               class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring" />
+               class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring" />
       </div>
 
       <div>
-        <label class="text-sm font-medium">Text column (optional)</label>
+        <label class="text-sm font-medium">Text column (optional, for CSV/XLSX/JSON)</label>
         <input name="text_column" placeholder="e.g., text"
-               class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring" />
+               class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring" />
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label class="text-sm font-medium">Embedding model</label>
           <select name="embedding_model" id="model-select"
-                  class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"></select>
+                  class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"></select>
         </div>
         <div class="flex items-end">
           <label class="inline-flex items-center gap-2 text-sm">
@@ -33,13 +37,13 @@
         </div>
       </div>
 
-      <fieldset class="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+      <fieldset class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
         <legend class="text-sm font-semibold px-2">Chunking</legend>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label class="text-sm">Mode</label>
             <select name="chunk_mode" id="chunk-mode"
-                    class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring">
+                    class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring">
               <option value="fixed_chars">fixed_chars</option>
               <option value="sentences">sentences</option>
               <option value="headings">headings</option>
@@ -48,23 +52,23 @@
           <div>
             <label class="text-sm">Size</label>
             <input type="number" name="chunk_size" id="chunk-size" value="1000" min="200" step="50"
-                   class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+                   class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
           </div>
           <div>
             <label class="text-sm">Overlap</label>
             <input type="number" name="chunk_overlap" id="chunk-overlap" value="150" min="0" step="25"
-                   class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+                   class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
           </div>
         </div>
       </fieldset>
 
-      <fieldset class="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+      <fieldset class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
         <legend class="text-sm font-semibold px-2">Vector backend</legend>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label class="text-sm">Type</label>
             <select name="backend" id="backend"
-                    class="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring">
+                    class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring">
               <option value="faiss_flat">faiss_flat</option>
               <option value="faiss_ivf">faiss_ivf</option>
               <option value="hnswlib">hnswlib</option>
@@ -74,42 +78,50 @@
             <label class="text-sm">nlist / nprobe</label>
             <div class="mt-1 grid grid-cols-2 gap-3">
               <input type="number" name="nlist" value="1024"
-                     class="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+                     class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
               <input type="number" name="nprobe" value="10"
-                     class="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+                     class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
             </div>
           </div>
           <div id="hnsw-params" class="hidden">
             <label class="text-sm">HNSW params</label>
             <div class="mt-1 grid grid-cols-3 gap-3">
               <input type="number" name="M" value="16"
-                     class="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+                     class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
               <input type="number" name="ef_construction" value="200"
-                     class="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+                     class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
               <input type="number" name="ef_search" value="64"
-                     class="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
+                     class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 focus-ring"/>
             </div>
           </div>
         </div>
       </fieldset>
 
+      <!-- File Dropzone -->
       <div>
-        <label class="text-sm font-medium">File (CSV/XLSX/JSON)</label>
-        <input type="file" name="file" required
-               class="mt-1 block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md
-                      file:border-0 file:text-sm file:font-medium
-                      file:bg-brand-600 file:text-white hover:file:bg-brand-700" />
+        <label class="text-sm font-medium">File (CSV/XLSX/JSON/CHM)</label>
+        <div id="dropzone"
+             class="mt-1 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4 text-center cursor-pointer">
+          <input type="file" name="file" id="fileInput" accept=".csv,.xlsx,.xls,.json,.chm"
+                 class="sr-only" required>
+          <div class="text-slate-600 dark:text-slate-400">
+            <div class="font-medium">Drag & drop your file here</div>
+            <div class="text-xs">or click to browse</div>
+            <div id="fileMeta" class="text-xs mt-1"></div>
+          </div>
+        </div>
+        <p id="fileError" class="mt-2 text-xs text-rose-600 hidden">Invalid file type or size.</p>
       </div>
 
       <button type="submit"
-              class="w-full inline-flex items-center justify-center gap-2 rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">
+              class="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">
         Upload & Build
       </button>
     </div>
   </form>
 
   <!-- Right: log -->
-  <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+  <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
     <div class="flex items-center justify-between mb-2">
       <h2 class="text-lg font-semibold">Build Log</h2>
       <span class="text-xs text-slate-500">live via SSE</span>
@@ -119,33 +131,231 @@
 </div>
 
 <script>
+/* ========= utils ========= */
+const esc = (s)=> (s??'').toString().replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const human = (bytes)=>{
+  if (!Number.isFinite(bytes)) return '—';
+  const u=['B','KB','MB','GB']; let n=bytes, i=0;
+  while (n>=1024 && i<u.length-1){ n/=1024; i++; }
+  return `${n.toFixed(n>=10||i===0?0:1)} ${u[i]}`;
+};
+const ext = (name)=>{ const m=/\.([^.]+)$/.exec(name||''); return m?m[1].toLowerCase():''; };
+
+/* ========= init config + toggles ========= */
 (async function init(){
-  const cfg = await (await fetch('/api/config')).json();
+  const cfg = await (await fetch('/api/config')).json().catch(()=>({}));
   const sel = document.getElementById('model-select');
-  sel.innerHTML = cfg.allowed_models.map(m => `<option value="${m}">${m}</option>`).join('');
-  sel.value = cfg.defaults.embedding_model;
-  document.getElementById('norm').checked = !!cfg.defaults.normalize_embeddings;
-  document.getElementById('chunk-mode').value = cfg.defaults.chunk_mode;
-  document.getElementById('chunk-size').value = cfg.defaults.chunk_size;
-  document.getElementById('chunk-overlap').value = cfg.defaults.chunk_overlap;
+  const allowed = Array.isArray(cfg.allowed_models) ? cfg.allowed_models : (cfg.models || []);
+  sel.innerHTML = (allowed||[]).map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+  if (cfg.defaults?.embedding_model) sel.value = cfg.defaults.embedding_model;
+  document.getElementById('norm').checked = !!cfg.defaults?.normalize_embeddings;
+  document.getElementById('chunk-mode').value = cfg.defaults?.chunk_mode || 'fixed_chars';
+  document.getElementById('chunk-size').value = cfg.defaults?.chunk_size ?? 1000;
+  document.getElementById('chunk-overlap').value = cfg.defaults?.chunk_overlap ?? 150;
 
   const be = document.getElementById('backend');
-  be.value = cfg.defaults.backend;
+  be.value = cfg.defaults?.backend || 'faiss_flat';
   const toggle = () => {
     document.getElementById('ivf-params').classList.toggle('hidden', be.value !== 'faiss_ivf');
     document.getElementById('hnsw-params').classList.toggle('hidden', be.value !== 'hnswlib');
   };
   be.addEventListener('change', toggle); toggle();
+
+  setupDropzone(cfg);
 })();
-document.getElementById('upload-form').addEventListener('htmx:afterRequest', (e) => {
-  const job = JSON.parse(e.detail.xhr.responseText);
-  const evt = new EventSource(`/api/events/${job.job_id}`);
+
+/* ========= Dropzone + validation (includes .chm) ========= */
+function setupDropzone(cfg){
+  const drop = document.getElementById('dropzone');
+  const input = document.getElementById('fileInput');
+  const meta  = document.getElementById('fileMeta');
+  const errEl = document.getElementById('fileError');
+  const form  = document.getElementById('upload-form');
+  const submitBtn = form?.querySelector('button[type="submit"]');
+
+  // Defaults; can be overridden by /api/config.upload
+  let ALLOWED = ['csv','xlsx','xls','json','chm'];
+  let MAX_MB  = 50;
+  try {
+    const up = cfg?.upload || {};
+    if (Array.isArray(up.allowed_exts) && up.allowed_exts.length) ALLOWED = up.allowed_exts.map(s=>s.toLowerCase());
+    if (up.max_mb && Number(up.max_mb)>0) MAX_MB = Number(up.max_mb);
+  } catch (_) {}
+
+  function invalidate(reason){
+    errEl.textContent = reason || 'Invalid file type or size.';
+    errEl.classList.remove('hidden');
+    drop.classList.add('border-rose-500','bg-rose-50/40');
+    submitBtn?.setAttribute('disabled','disabled');
+  }
+  function clearError(){
+    errEl.classList.add('hidden');
+    drop.classList.remove('border-rose-500','bg-rose-50/40');
+    submitBtn?.removeAttribute('disabled');
+  }
+  function validate(file){
+    if (!file){ invalidate('No file selected.'); return false; }
+    const e = ext(file.name);
+    if (!ALLOWED.includes(e)) { invalidate(`Invalid file type “.${e}”. Allowed: ${ALLOWED.join(', ')}`); return false; }
+    if (file.size > MAX_MB*1024*1024){ invalidate(`File too large (${human(file.size)}). Max ${MAX_MB} MB`); return false; }
+    clearError(); return true;
+  }
+  function showFileInfo(f){ meta.textContent = f ? `${f.name} • ${human(f.size)}` : ''; }
+
+  // Click to open picker
+  drop.addEventListener('click', ()=> input.click());
+
+  // Drag & Drop
+  drop.addEventListener('dragover', (e)=>{ e.preventDefault(); drop.classList.add('ring-2','ring-brand-500'); });
+  drop.addEventListener('dragleave', ()=> drop.classList.remove('ring-2','ring-brand-500'));
+  drop.addEventListener('drop', (e)=>{
+    e.preventDefault(); drop.classList.remove('ring-2','ring-brand-500');
+    const f = e.dataTransfer?.files?.[0]; if (!f) return;
+    const dt = new DataTransfer(); dt.items.add(f); input.files = dt.files;
+    if (validate(f)) showFileInfo(f); else { input.value=''; showFileInfo(null); }
+  });
+
+  // Picker change
+  input.addEventListener('change', ()=>{
+    const f = input.files?.[0];
+    if (validate(f)) showFileInfo(f); else { input.value=''; showFileInfo(null); }
+  });
+
+  // Block submit on invalid
+  form?.addEventListener('submit', (e)=>{
+    const f = input.files?.[0];
+    if (!validate(f)) e.preventDefault();
+    // Clear log for a fresh run
+    const logEl = document.getElementById('log'); if (logEl) logEl.textContent = '';
+  });
+}
+
+/* ========= SSE log (strip accidental "data:" prefixes) ========= */
+/* ================= Transport: htmx + SSE with live status ================= */
+(function wireTransport(){
+  const form = document.getElementById('upload-form');
   const logEl = document.getElementById('log');
-  evt.onmessage = (m) => {
-    logEl.textContent += m.data + "\n";
+  const status = document.getElementById('client-status') || (()=>{ const d=document.createElement('div'); return d; })();
+
+  let timerId = null;
+  let startedAt = 0;
+  let firstEventSeen = false;
+
+  function append(raw){
+    const line = (raw ?? '').replace(/^(?:data:\s*)+/i, ''); // strip stray "data: "
+    logEl.textContent += line + "\n";
+    if (logEl.textContent.length > 200000) logEl.textContent = logEl.textContent.slice(-200000);
     logEl.scrollTop = logEl.scrollHeight;
-    if (m.data === "DONE" || m.data.startsWith("ERROR")) evt.close();
-  };
-});
+  }
+
+  function startSpinner(label){
+    stopSpinner();
+    startedAt = Date.now();
+    firstEventSeen = false;
+    status.textContent = label || 'Starting…';
+    timerId = setInterval(()=>{
+      const s = Math.floor((Date.now() - startedAt)/1000);
+      // subtle animated dots
+      const dots = '.'.repeat((s % 3) + 1);
+      status.textContent = `${label} ${s}s ${dots}`;
+    }, 500);
+  }
+  function stopSpinner(msg){
+    if (timerId){ clearInterval(timerId); timerId = null; }
+    if (msg) status.textContent = msg;
+  }
+
+  function startSSE(job_id){
+    if (!job_id){ append('ERROR: Missing job_id'); stopSpinner('Error.'); return; }
+
+    // Show immediate feedback even if the server buffers
+    append(`(client) Job ${job_id} submitted. Waiting for server events…`);
+    startSpinner('Processing (waiting for events)…');
+
+    // First-byte watchdog: if nothing arrives in 5s, warn about proxy buffering
+    const watchdog = setTimeout(()=>{
+      if (!firstEventSeen){
+        append('(client) No events yet. If this never updates, your proxy may be buffering SSE. See Nginx/Caddy notes below.');
+      }
+    }, 5000);
+
+    const evt = new EventSource(`/api/events/${encodeURIComponent(job_id)}`);
+
+    evt.onopen = () => {
+      append('(client) Connected to event stream.');
+    };
+
+    evt.onmessage = (m) => {
+      if (!firstEventSeen){ firstEventSeen = true; stopSpinner('Streaming…'); }
+      const txt = m?.data ?? '';
+      append(txt);
+      const t = txt.trim();
+      if (t === 'DONE' || t.startsWith('ERROR')) {
+        evt.close();
+        stopSpinner(t.startsWith('ERROR') ? 'Finished with errors' : 'Done');
+      }
+    };
+
+    evt.onerror = () => {
+      append('ERROR: event stream disconnected');
+      stopSpinner('Disconnected.');
+    };
+
+    // Clear watchdog when the stream ends or first event arrives
+    const clearAll = () => clearTimeout(watchdog);
+    evt.addEventListener('message', clearAll, { once:true });
+  }
+
+  function clearLog(){ logEl.textContent = ''; }
+
+  // htmx path
+  if (window.htmx){
+    form.addEventListener('htmx:beforeRequest', ()=>{
+      clearLog();
+      append('(client) Upload started…');
+      startSpinner('Uploading…');
+    });
+    form.addEventListener('htmx:afterRequest', (e)=>{
+      stopSpinner('Upload complete. Starting job…');
+      try{
+        const job = JSON.parse(e.detail.xhr.responseText || '{}');
+        startSSE(job?.job_id);
+      }catch(_){
+        append('ERROR: Invalid JSON from /api/upload');
+        stopSpinner('Error.');
+      }
+    });
+    form.addEventListener('htmx:responseError', async (e)=>{
+      stopSpinner('Upload failed.');
+      const body = e.detail.xhr ? (e.detail.xhr.responseText || e.detail.xhr.statusText) : 'Unknown';
+      append('ERROR ' + (e.detail.xhr?.status || '') + ': ' + body);
+    });
+    form.addEventListener('htmx:sendError', ()=>{
+      stopSpinner('Network error.');
+      append('ERROR: Network error');
+    });
+  } else {
+    // fetch fallback
+    form.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      clearLog();
+      append('(client) Upload started…');
+      startSpinner('Uploading…');
+      try{
+        const fd = new FormData(form);
+        const resp = await fetch('/api/upload', { method:'POST', body: fd });
+        const txt = await resp.text();
+        stopSpinner('Upload complete. Starting job…');
+        if (!resp.ok){ append('ERROR '+resp.status+': '+txt); return; }
+        const job = JSON.parse(txt);
+        startSSE(job?.job_id);
+      }catch(err){
+        stopSpinner('Network error.');
+        append('ERROR: '+(err?.message||err));
+      }
+    });
+  }
+})();
+
 </script>
 {% endblock %}
