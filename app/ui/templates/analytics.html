@@ -4,7 +4,8 @@
 
 <section class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
   <!-- Controls -->
-  <div class="grid lg:grid-cols-6 gap-4 items-end">
+  <div class="grid lg:grid-cols-6 gap-y-4 gap-x-6 items-end">
+
     <div class="lg:col-span-2">
       <label class="text-sm font-medium">Index</label>
       <select id="index-select" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"></select>
@@ -23,12 +24,16 @@
     </div>
     <div>
       <label class="text-sm font-medium opacity-0">.</label>
-      <button id="load-btn" class="w-full rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Load</button>
+      <div class="flex gap-2">
+        <button id="load-btn" class="rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 font-medium">Load</button>
+        <button id="dl-btn" class="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 font-medium">Download</button>
+      </div>
     </div>
-    <div>
-      <label class="text-sm font-medium">Status</label>
-      <div id="status" class="mt-1 text-sm text-slate-500">—</div>
-    </div>
+      <div class="lg:ml-2">
+        <label class="text-sm font-medium">Status</label>
+        <div id="status" class="mt-1 text-sm text-slate-500">—</div>
+      </div>
+
   </div>
 
   <!-- Cards -->
@@ -48,7 +53,6 @@
 
   <!-- Per-source breakdown + Eval metrics -->
   <div class="mt-6 grid lg:grid-cols-2 gap-4">
-    <!-- Per-source -->
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900/60">
       <div class="flex items-center justify-between mb-2">
         <h3 class="text-sm font-semibold">Per-source breakdown (rows)</h3>
@@ -58,7 +62,6 @@
       <div id="src-note" class="text-[11px] text-slate-500 mt-2"></div>
     </div>
 
-    <!-- Eval metrics -->
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900/60">
       <div class="flex items-center justify-between mb-2">
         <h3 class="text-sm font-semibold">Evaluation metrics</h3>
@@ -88,92 +91,70 @@
   </div>
 </section>
 
-<!-- Toast -->
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden rounded-xl bg-slate-900 text-white px-4 py-2 shadow-lg"></div>
 
 <script>
-// ===== Basic error toast =====
 window.addEventListener('error', (e) => {
   const t=document.getElementById('toast');
   if(t){ t.textContent='JS error: '+(e?.message||e); t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),3000); }
   console.error(e);
 });
 
-// ---------- utils ----------
 const qs=(s,el=document)=>el.querySelector(s);
-const qsa=(s,el=document)=>[...el.querySelectorAll(s)];
 const esc=(s)=> (s??'').toString().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const fmt=(n,dec=0)=> (n==null||isNaN(n))?'—':Number(n).toFixed(dec);
 function toast(msg){ const t=qs('#toast'); t.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),1400); }
 function get(obj, path, dflt='—'){ try{ return path.split('.').reduce((a,k)=>a?.[k], obj) ?? dflt; }catch{ return dflt; } }
 function niceDate(s){ if(!s) return ''; try{ return new Date(s).toISOString().replace('T',' ').slice(0,19)+'Z'; }catch{return s} }
 
-// ---------- service: indexes & versions ----------
 const IndexLab = {
   _cache: { idx:null, exp:0, ver:new Map() },
-
   async fetchIndexes(force=false){
     const now=Date.now();
     if(!force && this._cache.idx && this._cache.exp>now) return this._cache.idx;
     const r=await fetch('/api/indexes'); const j=await r.json();
-    const arr=Array.isArray(j.indexes)?j.indexes:[];
-    this._cache.idx=arr; this._cache.exp=now+30000; return arr;
+    const arr=Array.isArray(j.indexes)?j.indexes:[]; this._cache.idx=arr; this._cache.exp=now+30000; return arr;
   },
-
   async populateIndexSelect(el, {value=null}={}){
     const sel=(typeof el==='string')?document.querySelector(el):el;
     if(!sel) return;
     const items=await this.fetchIndexes();
-    sel.innerHTML=items.map(it=>`<option value="${esc(it.index_name)}">${esc(it.index_name)}</option>`).join('')||'<option disabled>(no indexes)</option>';
+    const names = items.map(it => (typeof it==='string'? it : it.index_name)).filter(Boolean);
+    sel.innerHTML=names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')||'<option disabled>(no indexes)</option>';
     if(value && [...sel.options].some(o=>o.value===value)) sel.value=value;
     return sel.value;
   },
-
   async fetchVersions(indexName){
     if(!indexName) return [];
     if(this._cache.ver.has(indexName)) return this._cache.ver.get(indexName);
-    const r=await fetch(`/api/versioning/${encodeURIComponent(indexName)}`);
-    const j=await r.json();
-    const versions=Array.isArray(j.versions)?j.versions:[];
-    this._cache.ver.set(indexName, versions);
-    return versions;
+    const r=await fetch(`/api/versioning/${encodeURIComponent(indexName)}`); const j=await r.json();
+    const versions=Array.isArray(j.versions)?j.versions:[]; this._cache.ver.set(indexName, versions); return versions;
   },
-
   async populateVersionSelect(el, indexName, {value=null, includeNoneLabel='(latest)'}={}){
     const sel=(typeof el==='string')?document.querySelector(el):el;
     if(!sel) return;
     const versions=await this.fetchVersions(indexName);
     const prev=sel.value;
     sel.innerHTML = `<option value="">${includeNoneLabel}</option>` + versions.map(v=>{
-      const when=v.created_at?` — ${niceDate(v.created_at)}`:'';
-      return `<option value="${esc(v.version)}">v${esc(v.version)}${when}</option>`;
+      const when=v.created_at?` — ${niceDate(v.created_at)}`:''; return `<option value="${esc(v.version)}">v${esc(v.version)}${when}</option>`;
     }).join('');
     const desired=value||prev;
     if(desired && [...sel.options].some(o=>o.value===desired)) sel.value=desired;
   }
 };
 
-// ---------- fetchers ----------
 async function fetchStats(indexName, version){
   const url=`/api/stats/${encodeURIComponent(indexName)}${version?`?version=${encodeURIComponent(version)}`:''}`;
-  const r=await fetch(url);
-  if(!r.ok) throw new Error(await r.text());
-  return await r.json();
+  const r=await fetch(url); if(!r.ok) throw new Error(await r.text()); return await r.json();
 }
 async function fetchSources(indexName, version){
   const url=`/api/sources/${encodeURIComponent(indexName)}${version?`?version=${encodeURIComponent(version)}`:''}`;
-  const r=await fetch(url);
-  if(!r.ok) return null;
-  return await r.json();
+  const r=await fetch(url); if(!r.ok) return null; return await r.json();
 }
 async function fetchVersionMeta(indexName){
-  // to read eval metrics for a version
-  const r=await fetch(`/api/versioning/${encodeURIComponent(indexName)}`);
-  if(!r.ok) return {versions:[]};
-  return await r.json();
+  const r=await fetch(`/api/versioning/${encodeURIComponent(indexName)}`); if(!r.ok) return {versions:[]}; return await r.json();
 }
 
-// ---------- cards ----------
 function card(label, value, sub='', opts={}){
   const big = opts.big === true;
   const accent = opts.accent === true;
@@ -187,37 +168,45 @@ function card(label, value, sub='', opts={}){
       ${sub?`<div class="text-[11px] ${accent ? 'text-brand-700/80 dark:text-brand-300/80' : 'text-slate-500'} mt-1">${esc(sub)}</div>`:''}
     </div>`;
 }
-
 function renderCards(primaryStats, sourceMeta){
   const chunks = primaryStats.chunks ?? primaryStats.count ?? 0;
   const uniqSources = sourceMeta && sourceMeta.sources ? Object.keys(sourceMeta.sources).length : '—';
   const totalRows = sourceMeta && sourceMeta.sources
     ? Object.values(sourceMeta.sources).reduce((a,v)=>a + (Number(v?.rows)||0), 0)
     : '—';
-
   const c=[];
-  // Promote Rows (sum)
   c.push(card('Rows (sum)', totalRows, 'Sum of rows across all ingested files', {big:true, accent:true}));
   c.push(card('Chunks', chunks, 'Vector chunks in this index'));
   c.push(card('Avg length', fmt(primaryStats.len_avg,1), 'characters'));
   c.push(card('P95 length', fmt(primaryStats.len_p95,0), 'characters'));
   c.push(card('Max length', primaryStats.len_max ?? '—', 'characters'));
   c.push(card('Unique sources', uniqSources, 'files ingested'));
-
   qs('#cards').innerHTML = c.join('');
 }
 
-
-// ---------- histogram (overlay two versions) ----------
 function normalizeHistShape(s){
-  // accept {hist:{bins,counts}} or separate
   if(!s) return null;
   if (s.hist && Array.isArray(s.hist.counts)) return {bins:s.hist.bins, counts:s.hist.counts};
   if (Array.isArray(s.hist_counts)) return {bins:s.hist_bins, counts:s.hist_counts};
   if (Array.isArray(s.hist)) return {bins:s.bins, counts:s.hist};
   return null;
 }
-
+function _rebucketTo(binsA, binsB, countsB){
+  if(!binsA?.length || !binsB?.length || !countsB?.length) return null;
+  const out=new Array(Math.max(0,binsA.length-1)).fill(0);
+  for(let j=0;j<countsB.length;j++){
+    const leftB=Number(binsB[j] ?? 0), rightB=Number(binsB[j+1] ?? leftB);
+    const count=Number(countsB[j] ?? 0);
+    const center=(leftB+rightB)/2;
+    let idx=0;
+    for(let i=0;i<binsA.length-1;i++){
+      if(center>=binsA[i] && center<=binsA[i+1]){ idx=i; break; }
+      if(center>binsA[binsA.length-1]) idx=binsA.length-2;
+    }
+    out[idx]+=count;
+  }
+  return out;
+}
 function renderOverlayHistogram(primary, compare, labels){
   const wrap=qs('#hist-wrap');
   const A=normalizeHistShape(primary);
@@ -225,7 +214,6 @@ function renderOverlayHistogram(primary, compare, labels){
   if(!A || !Array.isArray(A.counts) || !A.counts.length){ wrap.classList.add('hidden'); return; }
   wrap.classList.remove('hidden');
 
-  // To overlay, normalize both to same bin count/edges (simple approach: use A’s bins and re-bucket B if needed)
   const binsA=A.bins||[];
   const countsA=A.counts||[];
   const countsB = B && Array.isArray(B.counts) ? _rebucketTo(binsA, B.bins||[], B.counts||[]) : null;
@@ -239,17 +227,14 @@ function renderOverlayHistogram(primary, compare, labels){
   let barsA='', barsB='';
   for(let i=0;i<n;i++){
     const x=pad.l+i*wBar;
-    // primary: solid fill
     const hA=scaleY(countsA[i]||0), yA=H-pad.b-hA;
     barsA+=`<rect x="${x}" y="${yA}" width="${wBar-2}" height="${hA}" rx="2" ry="2" class="fill-slate-500 dark:fill-slate-400" opacity="0.9"></rect>`;
-    // compare: thinner, semi-transparent overlay
     if(countsB){
       const hB=scaleY(countsB[i]||0), yB=H-pad.b-hB;
       barsB+=`<rect x="${x+Math.max(1,Math.floor((wBar-2)*0.25))}" y="${yB}" width="${Math.max(1,Math.floor((wBar-2)*0.5))}" height="${hB}" rx="2" ry="2" class="fill-brand-600" opacity="0.55"></rect>`;
     }
   }
 
-  // x axis ticks (4)
   let ticks='', T=4, minX=binsA?.[0] ?? 0, maxX=binsA?.[binsA.length-1] ?? 0;
   for(let i=0;i<=T;i++){
     const x=pad.l+Math.round((i/T)*(W-pad.l-pad.r));
@@ -259,40 +244,14 @@ function renderOverlayHistogram(primary, compare, labels){
 
   qs('#hist').innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">
-      <rect x="0" y="0" width="${W}" height="${H}" rx="8" ry="8" class="fill-transparent"></rect>
-      ${barsA}
-      ${barsB}
-      ${ticks}
+      ${barsA}${barsB}${ticks}
     </svg>`;
 
-  // legend
-  const parts=[labels.primary];
-  if (countsB) parts.push(labels.compare);
+  const parts=[labels.primary]; if (countsB) parts.push(labels.compare);
   qs('#hist-legend').textContent = parts.filter(Boolean).join(' • ');
-  qs('#hist-note').textContent = countsB ? 'Shaded bars = comparison version' : '';
+  qs('#hist-note').textContent = 'Chunk length is measured in characters. Solid = selected, shaded = comparison.';
 }
 
-// rebucket B into A’s bin edges (simple, linear scan)
-function _rebucketTo(binsA, binsB, countsB){
-  if(!binsA?.length || !binsB?.length || !countsB?.length) return null;
-  const out=new Array(Math.max(0,binsA.length-1)).fill(0);
-  for(let j=0;j<countsB.length;j++){
-    const leftB=binsB[j], rightB=binsB[j+1] ?? binsB[j];
-    const count=countsB[j]||0;
-    // put the whole B bin into nearest A bin by center
-    const center=Math.round((Number(leftB)+Number(rightB))/2);
-    // find A index by center
-    let idx=0;
-    for(let i=0;i<binsA.length-1;i++){
-      if(center>=binsA[i] && center<=binsA[i+1]){ idx=i; break; }
-      if(center>binsA[binsA.length-1]) idx=binsA.length-2;
-    }
-    out[idx]+=count;
-  }
-  return out;
-}
-
-// ---------- per-source bars (rows) ----------
 function renderSourceBars(sources){
   const box=qs('#src-chart');
   const note=qs('#src-note');
@@ -307,7 +266,6 @@ function renderSourceBars(sources){
   const rows=Object.entries(sources).map(([file,meta])=>({file, rows: Number(meta?.rows)||0}));
   rows.sort((a,b)=>b.rows-a.rows);
   const top=rows.slice(0,12);
-
   const total = rows.reduce((a,r)=>a+r.rows,0);
   hint.textContent = `Top by rows • total=${total}`;
 
@@ -327,11 +285,9 @@ function renderSourceBars(sources){
   });
 
   box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">${svgRows}</svg>`;
-  note.textContent='Rows approximate table/document line counts; larger values indicate heavier sources.';
+  note.textContent='Rows approximate line counts per file; higher bars indicate heavier sources.';
 }
 
-
-// ---------- manifest ----------
 function renderManifest(stats){
   const man = stats.manifest || {
     model:  stats.model,
@@ -343,7 +299,6 @@ function renderManifest(stats){
     chunk_overlap: stats.chunking?.overlap ?? stats.chunk_overlap,
     created_at:    stats.created_at
   };
-
   const dl=qs('#manifest-dl');
   const rows=[
     ['Model', man.model],
@@ -356,13 +311,11 @@ function renderManifest(stats){
     ['Created at', man.created_at],
   ];
   dl.innerHTML = rows.map(([k,v])=>`
-    <dt class="text-xs text-slate-500">${esc(k)}</dt>
+    <dt class="text-xs text-slate-500">${k}</dt>
     <dd class="text-sm font-medium">${esc(v ?? '—')}</dd>
   `).join('');
-
   const raw = JSON.stringify(man, null, 2);
   qs('#manifest-json').textContent = raw;
-
   qs('#copy-manifest').onclick = async ()=>{ try{ await navigator.clipboard.writeText(raw); toast('Manifest copied'); }catch{ toast('Copy failed'); } };
   qs('#export-json').onclick = ()=>{
     const blob = new Blob([JSON.stringify({stats, manifest:man}, null, 2)], {type:'application/json'});
@@ -372,15 +325,12 @@ function renderManifest(stats){
   };
 }
 
-// ---------- eval metrics ----------
 function renderEvalMetrics(indexName, version, allVersions){
   const dl=qs('#eval-dl');
   const hint=qs('#eval-hint');
   const note=qs('#eval-note');
   const rec = (allVersions?.versions||[]).find(v => v.version===version) || null;
-
   const val = (x)=> (x==null || Number.isNaN(Number(x)) ? '—' : String(x));
-
   const rows = [
     ['Recall@k', rec?.metrics?.['recall@k']],
     ['MRR',      rec?.metrics?.mrr],
@@ -390,44 +340,53 @@ function renderEvalMetrics(indexName, version, allVersions){
     ['Notes',    rec?.notes ?? '—'],
   ];
   dl.innerHTML = rows.map(([k,v])=>`
-    <dt class="text-xs text-slate-500">${esc(k)}</dt>
+    <dt class="text-xs text-slate-500">${k}</dt>
     <dd class="text-sm font-medium">${esc(val(v))}</dd>
   `).join('');
-
   hint.textContent = version ? `v${version}` : '(latest has no version metrics)';
-  note.textContent = rec ? '' : 'No metrics found for this version.';
+  note.textContent = rec ? '' : 'No metrics recorded for this version.';
 }
 
-// ---------- init ----------
 (async function init(){
-  const sel = qs('#index-select');
-  const ver = qs('#version-select');
-  const cmp = qs('#compare-version-select');
-  const status = qs('#status');
-  const btn = qs('#load-btn');
+  const sel = document.getElementById('index-select');
+  const ver = document.getElementById('version-select');
+  const cmp = document.getElementById('compare-version-select');
+  const status = document.getElementById('status');
+  const btn = document.getElementById('load-btn');
+  const dlBtn = document.getElementById('dl-btn');
 
-  const params=new URLSearchParams(location.search);
-  const idxFromUrl=params.get('index');
-  const verFromUrl=params.get('version');
-  const cmpFromUrl=params.get('compare');
+  const params = new URLSearchParams(location.search);
+  const idxFromUrl = params.get('index');
+  const verFromUrl = params.get('version');
+  const cmpFromUrl = params.get('compare');
+  const autoload = params.get('autoload') === '1';
 
   try{
-    await IndexLab.populateIndexSelect(sel, {value: idxFromUrl});
-    await IndexLab.populateVersionSelect(ver, sel.value, {value: verFromUrl, includeNoneLabel:'(latest)'});
-    await IndexLab.populateVersionSelect(cmp, sel.value, {value: cmpFromUrl, includeNoneLabel:'(none)'});
+    await IndexLab.populateIndexSelect(sel, { value: idxFromUrl });
+    await IndexLab.populateVersionSelect(ver, sel.value, { value: verFromUrl, includeNoneLabel:'(latest)' });
+    await IndexLab.populateVersionSelect(cmp, sel.value, { value: cmpFromUrl, includeNoneLabel:'(none)' });
   }catch(e){ status.textContent='Init failed: '+e; }
 
   sel.addEventListener('change', async ()=>{
-    await IndexLab.populateVersionSelect(ver, sel.value, {includeNoneLabel:'(latest)'}); 
-    await IndexLab.populateVersionSelect(cmp, sel.value, {includeNoneLabel:'(none)'}); 
+    await IndexLab.populateVersionSelect(ver, sel.value, { includeNoneLabel:'(latest)' });
+    await IndexLab.populateVersionSelect(cmp, sel.value, { includeNoneLabel:'(none)' });
     status.textContent='Index changed. Click “Load”.';
+  });
+
+  // Download ZIP (latest or specific version)
+  dlBtn.addEventListener('click', ()=>{
+    const ix = sel.value;
+    const v  = ver.value || '';
+    if(!ix){ toast('Pick an index'); return; }
+    const url = `/api/download/${encodeURIComponent(ix)}${v?`?version=${encodeURIComponent(v)}`:''}`;
+    const a = document.createElement('a');
+    a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove();
   });
 
   btn.addEventListener('click', load);
   document.addEventListener('keydown', (e)=>{ if((e.ctrlKey||e.metaKey)&&e.key==='Enter') btn.click(); });
 
-  // autoload if any value present
-  if(sel.value) load();
+  if (autoload || sel.value) load();
 
   async function load(){
     const ix = sel.value;
@@ -436,19 +395,12 @@ function renderEvalMetrics(indexName, version, allVersions){
 
     if(!ix){ status.textContent='Pick an index'; return; }
     status.textContent='Loading…';
-    qs('#cards').innerHTML='';
-    qs('#hist-wrap').classList.add('hidden');
-    qs('#manifest-dl').innerHTML='';
-    qs('#manifest-json').textContent='';
-    qs('#src-chart').innerHTML='';
-    qs('#src-hint').textContent='';
-    qs('#eval-dl').innerHTML='';
-    qs('#eval-hint').textContent='';
+    qs('#cards').innerHTML=''; qs('#hist-wrap').classList.add('hidden');
+    qs('#manifest-dl').innerHTML=''; qs('#manifest-json').textContent='';
+    qs('#src-chart').innerHTML=''; qs('#src-hint').textContent='';
+    qs('#eval-dl').innerHTML=''; qs('#eval-hint').textContent='';
 
-    // deep link
-    const p=new URLSearchParams({index:ix, autoload:'1'});
-    if(v) p.set('version', v);
-    if(w) p.set('compare', w);
+    const p=new URLSearchParams({index:ix, autoload:'1'}); if(v) p.set('version', v); if(w) p.set('compare', w);
     history.replaceState(null, '', `?${p.toString()}`);
 
     try{
@@ -459,24 +411,16 @@ function renderEvalMetrics(indexName, version, allVersions){
         fetchVersionMeta(ix),
       ]);
 
-      // Cards
+      const when = get(primary, 'manifest.created_at', primary.created_at || '');
+      const model = get(primary, 'manifest.model', primary.model || '');
+      const backend = get(primary, 'manifest.backend', primary.backend || '');
+      status.textContent = `index=${ix}${v?` • version=${v}`:''}${w?` • compare=${w}`:''} • chunks=${primary.chunks ?? primary.count ?? '—'} • model=${model} • backend=${backend}${when?` • created_at=${when}`:''}`;
+
       renderCards(primary, sources);
-
-      // Histogram overlay
-      renderOverlayHistogram(primary, compare, {
-        primary: v ? `v${v}` : 'latest',
-        compare: w ? `v${w}` : null
-      });
-      qs('#hist-note').textContent = 'Chunk length is measured in characters. Use this distribution to sanity-check chunking.';
-      // Per-source bars (rows)
-      renderSourceBars(sources?.sources || {});
-      qs('#src-hint').textContent = v ? `v${v}` : 'latest';
-
-      // Eval metrics (from versioning API)
-      renderEvalMetrics(ix, v || '', allVers);
-
-      // Manifest
+      renderOverlayHistogram(primary, compare, { primary: v ? `v${v}` : 'latest', compare: w ? `v${w}` : null });
+      renderSourceBars(sources?.sources || {}); qs('#src-hint').textContent = v ? `v${v}` : 'latest';
       renderManifest(primary);
+      renderEvalMetrics(ix, v || '', allVers);
 
       status.textContent='OK';
     }catch(e){

@@ -10,7 +10,7 @@ from .api import chunk_preview as chunk_preview_api
 # main.py
 from .api import indexes as indexes_api
 from .api import versions as versions_api
-
+from .api import download as download_api
 
 setup_logging()
 init_db()
@@ -28,6 +28,7 @@ app.include_router(sources_api.router, prefix="/api")
 app.include_router(chunk_preview_api.router, prefix="/api")
 app.include_router(indexes_api.router, prefix="/api")
 app.include_router(versions_api.router, prefix="/api")
+app.include_router(download_api.router, prefix="/api")
 
 templates = Jinja2Templates(directory="app/ui/templates")
 app.mount("/static", StaticFiles(directory="app/ui/templates"), name="static")
