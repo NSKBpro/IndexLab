@@ -1,0 +1,12 @@
+.git
+__pycache__/
+*.py[cod]
+*.pyd
+.venv/
+.env*
+.cache/
+dist/
+build/
+node_modules/
+data/
+models/
