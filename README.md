@@ -1,7 +1,8 @@
 # IndexLab
 
-[![Build Status](https://github.com/NSKBpro/IndexLab/actions/workflows/ci.yml/badge.svg)](https://github.com/NSKBpro/IndexLab/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+
 
 **IndexLab** is a flexible, open-source toolkit for **building, searching, and evaluating vector indexes**. It’s designed for engineers and researchers who want to experiment with embedding retrieval, index performance, and similarity search at scale.
 
@@ -13,17 +14,7 @@
 
 1. [Motivation](#motivation)  
 2. [Key Features](#key-features)  
-3. [Architecture](#architecture)  
-4. [Getting Started](#getting-started)  
-5. [Usage Examples](#usage-examples)  
-6. [Configuration](#configuration)  
-7. [API / CLI](#api--cli)  
-8. [Testing](#testing)  
-9. [Roadmap](#roadmap)  
-10. [Contributing](#contributing)  
-11. [License](#license)  
-12. [Acknowledgments](#acknowledgments)  
-13. [Contact](#contact)
+
 
 ---
 
